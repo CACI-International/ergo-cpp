@@ -14,6 +14,7 @@ run = fn description ^args ^{^kwargs} -> task $description (exec ^$args ^$kwargs
 
 # Get default compiler/flags settings.
 compiler = env path-search (string from (env_or CXX c++))
+archiver = env path-search (string from (env_or AR ar))
 extra-cflags = env_or CXXFLAGS ""
 extra-lflags = env_or LDFLAGS ""
 
@@ -63,7 +64,7 @@ module = fn dir config -> {
         uses = collection map (fn u -> u $context) $uses
         header-dirs = collection fold (fn l use -> [^$l,^(use header-dirs)]) [] $uses
         includes = to-includes $header-dirs
-        objects = map (fn f -> compile $f ^$includes ^(context cflags)) $files
+        objects = map (fn f -> compile (context project-root) $f ^$includes ^(context cflags)) $files
         impl = fold (fn l use -> [^$l,^(use impl)]) $objects $uses
         runtime = fold (fn l use -> [^$l,^(use runtime)]) [] $uses
         header-dir = value cache seq ^[
@@ -84,7 +85,7 @@ link = fn ^{^kwargs} name mod additional-flags type -> fn context -> cache seq ^
     out = path join $out $name
     cflags = if (kwargs cflags) [^(context cflags),^(kwargs cflags)] (context cflags)
     lflags = if (kwargs lflags) [^(context lflags),^(kwargs lflags)] (context lflags)
-    mod = mod {cflags, lflags}
+    mod = mod {project-root = (context project-root), cflags, lflags}
     run (string format "linking {} {}" $type $name) ^{ env = {PATH = $} } $compiler ^$additional-flags ^$lflags -o $out "-Wl,--start-group" ^(mod impl) "-Wl,--end-group"
     { file = $out, runtime = (mod runtime) }
 ]
@@ -92,15 +93,28 @@ link = fn ^{^kwargs} name mod additional-flags type -> fn context -> cache seq ^
 # Link a module into an executable.
 exe = fn ^{^kwargs} name mod -> link ^$kwargs $name $mod executable
 
-# Link a module into a shared library.
+# Link a module into a dynamic library.
 dynamic-library = fn ^{^kwargs} name mod -> fn context -> {
     res = (link ^{ cflags = [], ^$kwargs, cflags = [^$cflags,-fPIC] } (string format "lib{}.so" $name) $mod [-shared] "dynamic library") $context
     { ^$res }
 }
 
+# Link a module into a static library.
+static-library = fn ^{cflags} name mod -> fn context -> {
+    out = path new
+    fs create-dir $out
+    filename = string format "{}.a" $name
+    out = path join $out $filename
+    cflags = if $cflags [^(context cflags),^$cflags] (context cflags)
+    mod = mod { ^$context, cflags }
+    run (string format "creating static library {}" $filename) $archiver -crs $out ^(mod impl)
+    { file = $out, runtime = (mod runtime) }
+}
+
 {
-    module = $module
-    exe = $exe
-    dynamic-library = $plugin
-    context = fn cflags lflags -> fn t -> t {cflags,lflags}
+    module
+    exe
+    dynamic-library
+    static-library
+    context = fn project-root cflags lflags -> fn t -> t {project-root,cflags,lflags}
 }
