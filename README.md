@@ -15,7 +15,7 @@ determine the c++ compiler and object file archiver to use, and will default to
 
 This project evaluates to a map/module with the following values exposed.
 
-### context _project-root_ ^{_cflags_,_lflags_,}
+### context _project-root_ _cflags_ _lflags_
 Most of the functions take a context to return the final value. This function
 returns a function which will pass the context to arguments. The arguments are
 as follows:
