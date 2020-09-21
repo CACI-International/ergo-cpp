@@ -1,0 +1,106 @@
+# The c++ module provides an abstraction over c++ compilation and linking.
+# This module assumes binaries that are compatible with gcc flags (typically gcc and clang).
+
+^(ergo std)
+
+# If the first argument is a truth value, return it, otherwise return the second argument.
+unless = fn a b -> if $a $a $b
+
+# Return the value of an environment variable, or an alternative value if not set.
+env_or = fn name alternative -> unless (env get $name) $alternative
+
+# Run an executable as a task.
+run = fn description ^args ^{^kwargs} -> task $description (exec ^$args ^$kwargs) complete
+
+# Get default compiler/flags settings.
+compiler = env path-search (string from (env_or CXX c++))
+extra-cflags = env_or CXXFLAGS ""
+extra-lflags = env_or LDFLAGS ""
+
+# Compile a file with the given flags.
+# The project-root argument is used to ensure the file paths in compiled debug sections are user-friendly.
+compile = fn project-root file ^flags -> value cache seq ^[
+    out = path join (path new) (string format "{}.o" (path relative $project-root $file))
+    fs create-dir (path parent $out)
+    run (string format "compiling {}" $file) ^{ env = { PATH = $ } } $compiler -o $out ^$flags (fs track $file)
+    $out
+]
+
+to-includes = fn header-dirs -> fold (fn l dir -> [^$l,-I,$dir]) [] $header-dirs
+
+# Create a module in the given directory (used for auto parameters) with the given configuration.
+#
+# The configuration may be "auto", which will get all .cpp and .h files as the module contents.
+# Otherwise, it should be a map with the following optional keys:
+#   files: the files to compile, or "auto"
+#   headers: the headers to expose, or "auto"
+#   uses: the modules to use with this module
+#
+# The returned module generator function, when passed a compilation context, will return
+# a module output map with the following keys:
+#   impl: an array of compiled object files
+#   header-dirs: an array of header directories exported by the module (and all directories from used modules)
+#   runtime: an array of any additional requirements of the module (inherited from used modules)
+module = fn dir config -> {
+    config = match $config {
+        =auto = { files = auto, headers = auto }
+        other = $other
+    }
+    files = unless (config files) []
+    headers = unless (config headers) []
+    uses = unless (config uses) []
+
+    files = match (value $files) {
+        =auto = value force (fs glob (path join $dir *.cpp))
+        other = $other
+    }
+    headers = match (value $headers) {
+        =auto = value force (fs glob (path join $dir *.h))
+        other = $other
+    }
+
+    fn context -> {
+        uses = collection map (fn u -> u $context) $uses
+        header-dirs = collection fold (fn l use -> [^$l,^(use header-dirs)]) [] $uses
+        includes = to-includes $header-dirs
+        objects = map (fn f -> compile $f ^$includes ^(context cflags)) $files
+        impl = fold (fn l use -> [^$l,^(use impl)]) $objects $uses
+        runtime = fold (fn l use -> [^$l,^(use runtime)]) [] $uses
+        header-dir = value cache seq ^[
+            dir = path new
+            fs create-dir $dir
+            map (fn f -> fs copy (track $f) $dir) $headers
+            $dir
+        ]
+        header-dirs = [$header-dir,^$header-dirs]
+        { impl, header-dirs, runtime }
+    }
+}
+
+# Link a module.
+link = fn ^{^kwargs} name mod additional-flags type -> fn context -> cache seq ^[
+    out = path new
+    fs create-dir $out
+    out = path join $out $name
+    cflags = if (kwargs cflags) [^(context cflags),^(kwargs cflags)] (context cflags)
+    lflags = if (kwargs lflags) [^(context lflags),^(kwargs lflags)] (context lflags)
+    mod = mod {cflags, lflags}
+    run (string format "linking {} {}" $type $name) ^{ env = {PATH = $} } $compiler ^$additional-flags ^$lflags -o $out "-Wl,--start-group" ^(mod impl) "-Wl,--end-group"
+    { file = $out, runtime = (mod runtime) }
+]
+
+# Link a module into an executable.
+exe = fn ^{^kwargs} name mod -> link ^$kwargs $name $mod executable
+
+# Link a module into a shared library.
+dynamic-library = fn ^{^kwargs} name mod -> fn context -> {
+    res = (link ^{ cflags = [], ^$kwargs, cflags = [^$cflags,-fPIC] } (string format "lib{}.so" $name) $mod [-shared] "dynamic library") $context
+    { ^$res }
+}
+
+{
+    module = $module
+    exe = $exe
+    dynamic-library = $plugin
+    context = fn cflags lflags -> fn t -> t {cflags,lflags}
+}
