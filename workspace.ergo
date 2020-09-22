@@ -10,20 +10,51 @@ unless = fn a b -> if $a $a $b
 env_or = fn name alternative -> unless (env get $name) $alternative
 
 # Run an executable as a task.
-run = fn description ^args ^{^kwargs} -> task $description (exec ^$args ^$kwargs) complete
+run = fn description ^args ^{^kwargs} -> seq [$args,$kwargs] (task $description (exec ^$args ^$kwargs) complete)
 
 # Get default compiler/flags settings.
 compiler = env path-search (string from (env_or CXX c++))
 archiver = env path-search (string from (env_or AR ar))
-extra-cflags = env_or CXXFLAGS ""
-extra-lflags = env_or LDFLAGS ""
+extra-cflags = string split (env_or CXXFLAGS "") " "
+extra-lflags = string split (env_or LDFLAGS "") " "
+
+target-os = {
+    preproc = "#if defined(_WIN32)
+windows
+#elif defined(__linux__)
+linux
+#elif defined(__APPLE__)
+mac
+#else
+unsupported
+#endif"
+    check = exec ^{ stdin = $preproc } $compiler ^$extra-cflags -E -P -
+    value force (string trim (string from (check stdout)))
+}
+
+static-library-name = fn name -> match $target-os {
+    =windows = string format "{}.lib" $name
+    _ = string format "{}.a" $name
+}
+
+dynamic-library-name = fn name -> match $target-os {
+    =windows = string format "{}.dll" $name
+    =linux = string format "lib{}.so" $name
+    =mac = string format "lib{}.dylib" $name
+    _ = $name
+}
+
+exe-name = fn name -> match $target-os {
+    =windows = string format "{}.exe" $name
+    _ = $name
+}
 
 # Compile a file with the given flags.
 # The project-root argument is used to ensure the file paths in compiled debug sections are user-friendly.
 compile = fn project-root file ^flags -> value cache seq ^[
     out = path join (path new) (string format "{}.o" (path relative $project-root $file))
     fs create-dir (path parent $out)
-    run (string format "compiling {}" $file) ^{ env = { PATH = $ } } $compiler -o $out ^$flags (fs track $file)
+    run (string format "compiling {}" $file) ^{ env = { PATH = $ } } $compiler ^$extra-cflags -o $out ^$flags (fs track $file)
     $out
 ]
 
@@ -66,7 +97,7 @@ module = fn dir config -> {
         includes = to-includes $header-dirs
         objects = map (fn f -> compile (context project-root) $f ^$includes ^(context cflags)) $files
         impl = fold (fn l use -> [^$l,^(use impl)]) $objects $uses
-        runtime = fold (fn l use -> [^$l,^(use runtime)]) [] $uses
+        runtime = fold (fn l use -> [^$l,^(use runtime),^(unless (use runtime-if-used) [])]) [] $uses
         header-dir = value cache seq ^[
             dir = path new
             fs create-dir $dir
@@ -86,29 +117,26 @@ link = fn ^{^kwargs} name mod additional-flags type -> fn context -> cache seq ^
     cflags = if (kwargs cflags) [^(context cflags),^(kwargs cflags)] (context cflags)
     lflags = if (kwargs lflags) [^(context lflags),^(kwargs lflags)] (context lflags)
     mod = mod {project-root = (context project-root), cflags, lflags}
-    run (string format "linking {} {}" $type $name) ^{ env = {PATH = $} } $compiler ^$additional-flags ^$lflags -o $out "-Wl,--start-group" ^(mod impl) "-Wl,--end-group"
-    { file = $out, runtime = (mod runtime) }
+    run (string format "linking {} {}" $type $name) ^{ env = {PATH = $} } $compiler ^$extra-lflags ^$additional-flags ^$lflags -o $out "-Wl,--start-group" ^(mod impl) "-Wl,--end-group"
+    { file = $out, impl = [$file], runtime = (mod runtime), runtime-if-used = [$file], header-dirs = (mod header-dirs) }
 ]
 
 # Link a module into an executable.
-exe = fn ^{^kwargs} name mod -> link ^$kwargs $name $mod executable
+exe = fn ^{^kwargs} name mod -> link ^$kwargs (exe-name $name) $mod [] executable
 
 # Link a module into a dynamic library.
-dynamic-library = fn ^{^kwargs} name mod -> fn context -> {
-    res = (link ^{ cflags = [], ^$kwargs, cflags = [^$cflags,-fPIC] } (string format "lib{}.so" $name) $mod [-shared] "dynamic library") $context
-    { ^$res }
-}
+dynamic-library = fn ^{^kwargs} name mod -> link ^{ cflags = [], ^$kwargs, cflags = [^$cflags,-fPIC] } (dynamic-library-name $name) $mod [-shared] "dynamic library"
 
 # Link a module into a static library.
 static-library = fn ^{cflags} name mod -> fn context -> {
     out = path new
     fs create-dir $out
-    filename = string format "{}.a" $name
+    filename = static-library-name $name
     out = path join $out $filename
     cflags = if $cflags [^(context cflags),^$cflags] (context cflags)
     mod = mod { ^$context, cflags }
     run (string format "creating static library {}" $filename) $archiver -crs $out ^(mod impl)
-    { file = $out, runtime = (mod runtime) }
+    { file = $out, impl = [$file], runtime = (mod runtime), header-dirs = (mod header-dirs) }
 }
 
 {
