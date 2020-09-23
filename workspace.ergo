@@ -7,45 +7,57 @@
 unless = fn a b -> if $a $a $b
 
 # Return the value of an environment variable, or an alternative value if not set.
-env_or = fn name alternative -> unless (env get $name) $alternative
+env_or = fn name alternative -> value force (unless (env get $name) $alternative)
 
 # Run an executable as a task.
 run = fn description ^args ^{^kwargs} -> seq [$args,$kwargs] (task $description (exec ^$args ^$kwargs) complete)
 
+filter = fn f arr -> collection fold (fn acc v -> if (f $v) [^$acc,$v] $acc) [] $arr
+
+parse-env-flags = fn var -> {
+    strs = string split " " (env_or $var "")
+    filter (fn v -> match (value force $v) {
+        ="" = ()
+        _ = true
+    }) $strs
+}
+
 # Get default compiler/flags settings.
-compiler = env path-search (string from (env_or CXX c++))
-archiver = env path-search (string from (env_or AR ar))
-extra-cflags = string split (env_or CXXFLAGS "") " "
-extra-lflags = string split (env_or LDFLAGS "") " "
+compiler = env path-search (env_or CXX c++)
+archiver = env path-search (env_or AR ar)
+extra-cflags = parse-env-flags CXXFLAGS
+extra-lflags = parse-env-flags LDFLAGS
 
 target-os = {
     preproc = "#if defined(_WIN32)
-windows
+\"windows\"
 #elif defined(__linux__)
-linux
+\"linux\"
 #elif defined(__APPLE__)
-mac
+\"mac\"
 #else
-unsupported
+\"unsupported\"
 #endif"
     check = exec ^{ stdin = $preproc } $compiler ^$extra-cflags -E -P -
     value force (string trim (string from (check stdout)))
 }
 
+value force (log debug (string format "detected os: {}" $target-os))
+
 static-library-name = fn name -> match $target-os {
-    =windows = string format "{}.lib" $name
+    ="\"windows\"" = string format "{}.lib" $name
     _ = string format "{}.a" $name
 }
 
 dynamic-library-name = fn name -> match $target-os {
-    =windows = string format "{}.dll" $name
-    =linux = string format "lib{}.so" $name
-    =mac = string format "lib{}.dylib" $name
+    ="\"windows\"" = string format "{}.dll" $name
+    ="\"linux\"" = string format "lib{}.so" $name
+    ="\"mac\"" = string format "lib{}.dylib" $name
     _ = $name
 }
 
 exe-name = fn name -> match $target-os {
-    =windows = string format "{}.exe" $name
+    ="\"windows\"" = string format "{}.exe" $name
     _ = $name
 }
 
@@ -54,11 +66,11 @@ exe-name = fn name -> match $target-os {
 compile = fn project-root file ^flags -> value cache seq ^[
     out = path join (path new) (string format "{}.o" (path relative $project-root $file))
     fs create-dir (path parent $out)
-    run (string format "compiling {}" $file) ^{ env = { PATH = $ } } $compiler ^$extra-cflags -o $out ^$flags (fs track $file)
+    run (string format "compiling {}" $file) ^{ env = { PATH = $ } } $compiler ^$extra-cflags -c -o $out ^$flags (fs track $file)
     $out
 ]
 
-to-includes = fn header-dirs -> fold (fn l dir -> [^$l,-I,$dir]) [] $header-dirs
+to-includes = fn header-dirs -> collection fold (fn l dir -> [^$l,-I,$dir]) [] $header-dirs
 
 # Create a module in the given directory (used for auto parameters) with the given configuration.
 #
@@ -78,15 +90,21 @@ module = fn dir config -> {
         =auto = { files = auto, headers = auto }
         other = $other
     }
-    files = unless (config files) []
-    headers = unless (config headers) []
-    uses = unless (config uses) []
+    default = fn name -> {
+        match (config $name) {
+            =() = []
+            other = $other
+        }
+    }
+    files = default files
+    headers = default headers
+    uses = default uses
 
-    files = match (value $files) {
+    files = match (value force $files) {
         =auto = value force (fs glob (path join $dir *.cpp))
         other = $other
     }
-    headers = match (value $headers) {
+    headers = match (value force $headers) {
         =auto = value force (fs glob (path join $dir *.h))
         other = $other
     }
@@ -95,13 +113,13 @@ module = fn dir config -> {
         uses = collection map (fn u -> u $context) $uses
         header-dirs = collection fold (fn l use -> [^$l,^(use header-dirs)]) [] $uses
         includes = to-includes $header-dirs
-        objects = map (fn f -> compile (context project-root) $f ^$includes ^(context cflags)) $files
-        impl = fold (fn l use -> [^$l,^(use impl)]) $objects $uses
-        runtime = fold (fn l use -> [^$l,^(use runtime),^(unless (use runtime-if-used) [])]) [] $uses
+        objects = collection map (fn f -> compile (context project-root) $f ^$includes ^(context cflags)) $files
+        impl = collection fold (fn l use -> [^$l,^(use impl)]) $objects $uses
+        runtime = collection fold (fn l use -> [^$l,^(use runtime),^(value force (unless (use runtime-if-used) []))]) [] $uses
         header-dir = value cache seq ^[
             dir = path new
             fs create-dir $dir
-            map (fn f -> fs copy (track $f) $dir) $headers
+            collection map (fn f -> fs copy (fs track $f) $dir) $headers
             $dir
         ]
         header-dirs = [$header-dir,^$header-dirs]
@@ -110,19 +128,35 @@ module = fn dir config -> {
 }
 
 # Link a module.
-link = fn ^{^kwargs} name mod additional-flags type -> fn context -> cache seq ^[
+link = fn ^{^kwargs} name mod additional-flags type -> fn context -> value cache seq ^[
     out = path new
     fs create-dir $out
     out = path join $out $name
-    cflags = if (kwargs cflags) [^(context cflags),^(kwargs cflags)] (context cflags)
-    lflags = if (kwargs lflags) [^(context lflags),^(kwargs lflags)] (context lflags)
+    kwcflags = value force (unless (kwargs cflags) [])
+    kwlflags = value force (unless (kwargs lflags) [])
+    cflags = [^(context cflags),^$kwcflags]
+    lflags = [^(context lflags),^$kwlflags]
     mod = mod {project-root = (context project-root), cflags, lflags}
     run (string format "linking {} {}" $type $name) ^{ env = {PATH = $} } $compiler ^$extra-lflags ^$additional-flags ^$lflags -o $out "-Wl,--start-group" ^(mod impl) "-Wl,--end-group"
     { file = $out, impl = [$file], runtime = (mod runtime), runtime-if-used = [$file], header-dirs = (mod header-dirs) }
 ]
 
 # Link a module into an executable.
-exe = fn ^{^kwargs} name mod -> link ^$kwargs (exe-name $name) $mod [] executable
+exe = fn ^{^kwargs} name mod -> fn context -> {
+    ret = (link ^$kwargs (exe-name $name) $mod [] executable) $context
+    {
+        ^$ret
+        exec = fn ^args ^{^kwargs} -> {
+            libpath = value cache seq ^[
+                libpath = path new
+                fs create-dir $libpath
+                collection map (fn f -> fs copy $f $libpath) (value force $runtime)
+                $libpath
+            ]
+            exec ^{ env = {}, ^$kwargs, env = { ^$env, LD_LIBRARY_PATH = $libpath } } $file ^$args
+        }
+    }
+}
 
 # Link a module into a dynamic library.
 dynamic-library = fn ^{^kwargs} name mod -> link ^{ cflags = [], ^$kwargs, cflags = [^$cflags,-fPIC] } (dynamic-library-name $name) $mod [-shared] "dynamic library"

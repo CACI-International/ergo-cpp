@@ -1,0 +1,6 @@
+dyn-mod = c++ module $work-dir {
+    files = auto
+    uses = [c++ dynamic-library add2 (ergo ../basic_module)]
+}
+
+c++ exe forty_two_dyn $dyn-mod

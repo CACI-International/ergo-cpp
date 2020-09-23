@@ -1,0 +1,32 @@
+c++ = ergo ..
+project-root = $work-dir
+prelude = {c++}
+build = fn cflags lflags p -> {
+    path = ergo std path
+    fs = ergo std fs
+    if = ergo std if
+    value = ergo std value
+    # Load requested output
+    output = ergo (path join $work-dir $p)
+    ctx = c++ context $project-root $cflags $lflags
+    ctx $output
+}
+dist = fn result -> {
+    path = ergo std path
+    fs = ergo std fs
+    seq = ergo std seq
+    map = ergo std collection map
+    seq ^[
+        out = path join $work-dir dist
+        fs create-dir $out
+        fs copy (result file) $out
+        map (fn f -> fs copy $f $out) (result runtime) 
+        ()
+    ]
+}
+build-debug = fn p -> build [-Og,-g] [-Og] $p
+debug = fn p -> dist (build-debug $p)
+release = fn p -> dist (build [-O2] [-O2,-s] $p)
+run = fn p -> (build-debug $p) exec arg
+
+{prelude, debug, release, run}
