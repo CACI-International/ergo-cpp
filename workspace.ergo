@@ -44,6 +44,12 @@ target-os = {
 
 value force (log debug (string format "detected os: {}" $target-os))
 
+lib-path-env = fn path -> value force (match $target-os {
+    ="\"mac\"" = { DYLD_LIBRARY_PATH = $path }
+    ="\"linux\"" = { LD_LIBRARY_PATH = $path }
+    _ = { PATH = $path }
+})
+
 static-library-name = fn name -> match $target-os {
     ="\"windows\"" = string format "{}.lib" $name
     _ = string format "{}.a" $name
@@ -153,7 +159,7 @@ exe = fn ^{^kwargs} name mod -> fn context -> {
                 collection map (fn f -> fs copy $f $libpath) (value force $runtime)
                 $libpath
             ]
-            exec ^{ env = {}, ^$kwargs, env = { ^$env, LD_LIBRARY_PATH = $libpath } } $file ^$args
+            exec ^{ env = {}, ^$kwargs, env = { ^$env, ^(lib-path-env $libpath) } } $file ^$args
         }
     }
 }

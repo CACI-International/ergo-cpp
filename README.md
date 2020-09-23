@@ -54,10 +54,11 @@ Compile a module into an executable. The name is mainly used for making readable
 debug info. Additional keyword arguments `cflags` and `lflags` may be used to
 add flags for all files compiled and linked for this executable. This returns a
 value which should be passed to the context function, and will return a map with
-the following keys:
+compatible keys for a module as well as the following keys:
 
 * file - the compiled executable
-* runtime - additional files needed at runtime
+* exec - a function which will run the executable with `std exec` with the
+  runtime appropriately set up
 
 
 ### dynamic-library _name_ _mod_
@@ -65,10 +66,11 @@ Compile a module into a dynamic library. The name is mainly used for making
 readable debug info. Additional keyword arguments `cflags` and `lflags` may be
 used to add flags for all files compiled and linked for this dynamic library.
 This returns a value which should be passed to the context function, and will
-return a map with the following keys:
+return a map with compatible keys for a module as well as the following keys:
 
 * file - the compiled dynamic library
-* runtime - additional files needed at runtime
+* runtime-if-used - an array of additional runtime requirements if this library
+  is used as an input to other modules
 
 
 ### static-library _name_ _mod_
@@ -76,7 +78,7 @@ Compile a module into a static library. The name is mainly used for making
 readable debug info. Additional keyword argument `cflags` may be used to add
 flags for all files compiled for this static library. The static library will
 contain all dependant module files. This returns a value which should be passed
-to the context function, and will return a map with the following keys:
+to the context function, and will return a map with compatible keys for a module
+as well as the following keys:
 
 * file - the static archive
-* runtime - additional files needed at runtime
