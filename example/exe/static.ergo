@@ -1,6 +1,6 @@
-mod = c++ module $work-dir {
+mod = c++:module :work-dir {
     files = auto
     uses = [ergo ../basic_module]
 }
 
-c++ exe forty_two $mod
+c++:exe forty_two :mod

@@ -4,27 +4,27 @@
 ^(ergo std)
 
 # If the first argument is a truth value, return it, otherwise return the second argument.
-unless = fn a b -> if $a $a $b
+unless = fn a b -> if :a :a :b
 
 # Return the value of an environment variable, or an alternative value if not set.
-env_or = fn name alternative -> value force (unless (env get $name) $alternative)
+env_or = fn name alternative -> value:force <| unless (env:get :name) :alternative
 
 # Run an executable as a task.
-run = fn description ^args ^{^kwargs} -> seq [$args,$kwargs] (task $description (exec ^$args ^$kwargs) complete)
+run = fn description ^args ^{^kwargs} -> seq [:args,:kwargs] (task :description (exec ^:args ^:kwargs):complete)
 
-filter = fn f arr -> collection fold (fn acc v -> if (f $v) [^$acc,$v] $acc) [] $arr
+filter = fn f arr -> collection:fold (fn acc v -> if (f :v) [^:acc,:v] :acc) [] :arr
 
 parse-env-flags = fn var -> {
-    strs = string split " " (env_or $var "")
-    filter (fn v -> match (value force $v) {
+    strs = string:split " " (env_or :var "")
+    filter (fn v -> match (value:force :v) {
         ="" = ()
         _ = true
-    }) $strs
+    }) :strs
 }
 
 # Get default compiler/flags settings.
-compiler = env path-search (env_or CXX c++)
-archiver = env path-search (env_or AR ar)
+compiler = env:path-search <| env_or CXX c++
+archiver = env:path-search <| env_or AR ar
 extra-cflags = parse-env-flags CXXFLAGS
 extra-lflags = parse-env-flags LDFLAGS
 
@@ -38,45 +38,47 @@ target-os = {
 #else
 \"unsupported\"
 #endif"
-    check = exec ^{ stdin = $preproc } $compiler ^$extra-cflags -E -P -
-    value force (string trim (string from (check stdout)))
+    check = exec ^{ stdin = :preproc } :compiler ^:extra-cflags -E -P -
+    check:stdout | string:from | string:trim | string:split "\"" |>:1 | value:force
 }
 
-value force (log debug (string format "detected os: {}" $target-os))
+value:force <| log debug <| string:format "detected os: {}" :target-os
 
-lib-path-env = fn path -> value force (match $target-os {
-    ="\"mac\"" = { DYLD_LIBRARY_PATH = $path }
-    ="\"linux\"" = { LD_LIBRARY_PATH = $path }
-    _ = { PATH = $path }
+lib-path-env = fn path -> value:force (match :target-os {
+    =mac = { DYLD_LIBRARY_PATH = :path }
+    =linux = { LD_LIBRARY_PATH = :path }
+    _ = { PATH = :path }
 })
 
-static-library-name = fn name -> match $target-os {
-    ="\"windows\"" = string format "{}.lib" $name
-    _ = string format "{}.a" $name
+static-library-name = fn name -> match :target-os {
+    =windows = string:format "{}.lib" :name
+    _ = string:format "{}.a" :name
 }
 
-dynamic-library-name = fn name -> match $target-os {
-    ="\"windows\"" = string format "{}.dll" $name
-    ="\"linux\"" = string format "lib{}.so" $name
-    ="\"mac\"" = string format "lib{}.dylib" $name
-    _ = $name
+dynamic-library-name = fn name -> match :target-os {
+    =windows = string:format "{}.dll" :name
+    =linux = string:format "lib{}.so" :name
+    =mac = string:format "lib{}.dylib" :name
+    _ = :name
 }
 
-exe-name = fn name -> match $target-os {
-    ="\"windows\"" = string format "{}.exe" $name
-    _ = $name
+exe-name = fn name -> match :target-os {
+    =windows = string:format "{}.exe" :name
+    _ = :name
 }
 
 # Compile a file with the given flags.
 # The project-root argument is used to ensure the file paths in compiled debug sections are user-friendly.
-compile = fn project-root file ^flags -> value cache seq ^[
-    out = path join (path new) (string format "{}.o" (path relative $project-root $file))
-    fs create-dir (path parent $out)
-    run (string format "compiling {}" $file) ^{ env = { PATH = $ } } $compiler ^$extra-cflags -c -o $out ^$flags (fs track $file)
-    $out
+compile = fn project-root file ^flags -> value:cache <| seq ^[
+    out = path:join (path:new) (string:format "{}.o" <| path:relative :project-root :file)
+    fs:create-dir <| path:parent :out
+    run (string:format "compiling {}" :file) ^{ env = { PATH = : } } :compiler ^:extra-cflags -c -o :out ^:flags (fs:track :file)
+    :out
 ]
 
-to-includes = fn header-dirs -> collection fold (fn l dir -> [^$l,-I,$dir]) [] $header-dirs
+to-includes = fn header-dirs -> collection:fold (fn l dir -> [^:l,-I,:dir]) [] :header-dirs
+
+with-context = fn f -> {apply-context = :f}
 
 # Create a module in the given directory (used for auto parameters) with the given configuration.
 #
@@ -92,97 +94,97 @@ to-includes = fn header-dirs -> collection fold (fn l dir -> [^$l,-I,$dir]) [] $
 #   header-dirs: an array of header directories exported by the module (and all directories from used modules)
 #   runtime: an array of any additional requirements of the module (inherited from used modules)
 module = fn dir config -> {
-    config = match $config {
+    config = match :config {
         =auto = { files = auto, headers = auto }
-        other = $other
+        other = :other
     }
     default = fn name -> {
-        match (config $name) {
+        match config::name {
             =() = []
-            other = $other
+            other = :other
         }
     }
     files = default files
     headers = default headers
     uses = default uses
 
-    files = match (value force $files) {
-        =auto = value force (fs glob (path join $dir *.cpp))
-        other = $other
+    files = match (value:force :files) {
+        =auto = value:force <| fs:glob <| path:join :dir *.cpp
+        other = :other
     }
-    headers = match (value force $headers) {
-        =auto = value force (fs glob (path join $dir *.h))
-        other = $other
+    headers = match (value:force :headers) {
+        =auto = value:force <| fs:glob <| path:join :dir *.h
+        other = :other
     }
 
-    fn context -> {
-        uses = collection map (fn u -> u $context) $uses
-        header-dirs = collection fold (fn l use -> [^$l,^(use header-dirs)]) [] $uses
-        includes = to-includes $header-dirs
-        objects = collection map (fn f -> compile (context project-root) $f ^$includes ^(context cflags)) $files
-        impl = collection fold (fn l use -> [^$l,^(use impl)]) $objects $uses
-        runtime = collection fold (fn l use -> [^$l,^(use runtime),^(value force (unless (use runtime-if-used) []))]) [] $uses
-        header-dir = value cache seq ^[
-            dir = path new
-            fs create-dir $dir
-            collection map (fn f -> fs copy (fs track $f) $dir) $headers
-            $dir
+    with-context (fn context -> {
+        uses = collection:map (fn u -> u:apply-context :context) :uses
+        header-dirs = collection:fold (fn l use -> [^:l,^use:header-dirs]) [] :uses
+        includes = to-includes :header-dirs
+        objects = collection:map (fn f -> compile context:project-root :f ^:includes ^context:cflags) :files
+        impl = collection:fold (fn l use -> [^:l,^use:impl]) :objects :uses
+        runtime = collection:fold (fn l use -> [^:l,^use:runtime,^(value:force <| unless use:runtime-if-used [])]) [] :uses
+        header-dir = value:cache <| seq ^[
+            dir = (path:new)
+            fs:create-dir :dir
+            collection:map (fn f -> fs:copy (fs:track :f) :dir) :headers
+            :dir
         ]
-        header-dirs = [$header-dir,^$header-dirs]
+        header-dirs = [:header-dir,^:header-dirs]
         { impl, header-dirs, runtime }
-    }
+    })
 }
 
 # Link a module.
-link = fn ^{^kwargs} name mod additional-flags type -> fn context -> value cache seq ^[
-    out = path new
-    fs create-dir $out
-    out = path join $out $name
-    kwcflags = value force (unless (kwargs cflags) [])
-    kwlflags = value force (unless (kwargs lflags) [])
-    cflags = [^(context cflags),^$kwcflags]
-    lflags = [^(context lflags),^$kwlflags]
-    mod = mod {project-root = (context project-root), cflags, lflags}
-    run (string format "linking {} {}" $type $name) ^{ env = {PATH = $} } $compiler ^$extra-lflags ^$additional-flags ^$lflags -o $out "-Wl,--start-group" ^(mod impl) "-Wl,--end-group"
-    { file = $out, impl = [$file], runtime = (mod runtime), runtime-if-used = [$file], header-dirs = (mod header-dirs) }
-]
+link = fn ^{^kwargs} name mod additional-flags type -> with-context (fn context -> value:cache <| seq ^[
+    out = (path:new)
+    fs:create-dir :out
+    out = path:join :out :name
+    kwcflags = value:force <| unless kwargs:cflags []
+    kwlflags = value:force <| unless kwargs:lflags []
+    cflags = [^context:cflags,^:kwcflags]
+    lflags = [^context:lflags,^:kwlflags]
+    mod = mod:apply-context {project-root = context:project-root, cflags, lflags}
+    run (string:format "linking {} {}" :type :name) ^{ env = {PATH = :} } :compiler ^:extra-lflags ^:additional-flags ^:lflags -o :out "-Wl,--start-group" ^mod:impl "-Wl,--end-group"
+    { file = :out, impl = [:file], runtime = mod:runtime, runtime-if-used = [:file], header-dirs = mod:header-dirs }
+])
 
 # Link a module into an executable.
-exe = fn ^{^kwargs} name mod -> fn context -> {
-    ret = (link ^$kwargs (exe-name $name) $mod [] executable) $context
+exe = fn ^{^kwargs} name mod -> with-context (fn context -> {
+    ret = link ^:kwargs (exe-name :name) :mod [] executable |>:apply-context :context
     {
-        ^$ret
+        ^:ret
         exec = fn ^args ^{^kwargs} -> {
-            libpath = value cache seq ^[
-                libpath = path new
-                fs create-dir $libpath
-                collection map (fn f -> fs copy $f $libpath) (value force $runtime)
-                $libpath
+            libpath = value:cache <| seq ^[
+                libpath = (path:new)
+                fs:create-dir :libpath
+                collection:map (fn f -> fs:copy :f :libpath) <| value:force :runtime
+                :libpath
             ]
-            exec ^{ env = {}, ^$kwargs, env = { ^$env, ^(lib-path-env $libpath) } } $file ^$args
+            exec ^{ env = {}, ^:kwargs, env = { ^:env, ^(lib-path-env :libpath) } } :file ^:args
         }
     }
-}
+})
 
 # Link a module into a dynamic library.
-dynamic-library = fn ^{^kwargs} name mod -> link ^{ cflags = [], ^$kwargs, cflags = [^$cflags,-fPIC] } (dynamic-library-name $name) $mod [-shared] "dynamic library"
+dynamic-library = fn ^{^kwargs} name mod -> link ^{ cflags = [], ^:kwargs, cflags = [^:cflags,-fPIC] } (dynamic-library-name :name) :mod [-shared] "dynamic library"
 
 # Link a module into a static library.
-static-library = fn ^{cflags} name mod -> fn context -> {
-    out = path new
-    fs create-dir $out
-    filename = static-library-name $name
-    out = path join $out $filename
-    cflags = if $cflags [^(context cflags),^$cflags] (context cflags)
-    mod = mod { ^$context, cflags }
-    run (string format "creating static library {}" $filename) $archiver -crs $out ^(mod impl)
-    { file = $out, impl = [$file], runtime = (mod runtime), header-dirs = (mod header-dirs) }
-}
+static-library = fn ^{cflags} name mod -> with-context (fn context -> {
+    out = (path:new)
+    fs:create-dir :out
+    filename = static-library-name :name
+    out = path:join :out :filename
+    cflags = if :cflags [^context:cflags,^:cflags] context:cflags
+    mod = mod { ^:context, cflags }
+    run (string:format "creating static library {}" :filename) :archiver -crs :out ^mod:impl
+    { file = :out, impl = [:file], runtime = mod:runtime, header-dirs = mod:header-dirs }
+})
 
 {
     module
     exe
     dynamic-library
     static-library
-    context = fn project-root cflags lflags -> fn t -> t {project-root,cflags,lflags}
+    apply-context = fn project-root cflags lflags t -> t:apply-context {project-root,cflags,lflags}
 }

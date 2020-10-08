@@ -15,19 +15,20 @@ determine the c++ compiler and object file archiver to use, and will default to
 
 This project evaluates to a map/module with the following values exposed.
 
-### context _project-root_ _cflags_ _lflags_
+### apply-context _project-root_ _cflags_ _lflags_ _value_
 Most of the functions take a context to return the final value. This function
-returns a function which will pass the context to arguments. The arguments are
-as follows:
+creates and applies the context to a value returned by the other functions. The
+arguments are as follows:
 
 * project-root - the root directory of the project, used for user-friendly debug
   paths
 * cflags - an array of global compilation flags to use
 * lflags - an array of global linking flags to use
+* value - a value returned by `module`, `exe`, `dynamic-library`, or
+  `static-library`
 
-The returned function should be called on the values returned by module, exe,
-etc.
-
+The specific values returned once the context is applied are described for each
+function.
 
 ### module _dir_ _config_
 A function for creating a module. Provide a module directory (only used with
