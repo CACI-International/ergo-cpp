@@ -28,7 +28,7 @@ archiver = env:path-search <| env_or AR ar
 extra-cflags = parse-env-flags CXXFLAGS
 extra-lflags = parse-env-flags LDFLAGS
 
-target-os = {
+target-os = (value:force <| value:cache {
     preproc = "#if defined(_WIN32)
 \"windows\"
 #elif defined(__linux__)
@@ -38,9 +38,9 @@ target-os = {
 #else
 \"unsupported\"
 #endif"
-    check = exec ^{ stdin = :preproc } :compiler ^:extra-cflags -E -P -
-    check:stdout | string:from | string:trim | string:split "\"" |>:1 | value:force
-}
+    output = exec ^{ stdin = :preproc, env = { PATH = : } } :compiler ^:extra-cflags -E -P - |>:stdout
+    :output | string:from | string:trim | string:split "\""
+}):1
 
 value:force <| log debug <| string:format "detected os: {}" :target-os
 
