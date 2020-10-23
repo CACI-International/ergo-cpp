@@ -74,7 +74,7 @@ exe-name = fn name -> match :target-os {
 compile = fn project-root file ^flags -> value:cache <| seq ^[
     out = path:join (path:new) (string:format "{}.o" <| path:relative :project-root :file)
     fs:create-dir <| path:parent :out
-    run (string:format "compiling {}" :file) ^{ env = { PATH = : } } :compiler ^:extra-cflags -c -o :out ^:flags :file
+    run (string:format "compiling {}" :file) ^{ env = { PATH = : } } :compiler ^:extra-cflags -c -o :out ^:flags (fs:track :file)
     :out
 ]
 
