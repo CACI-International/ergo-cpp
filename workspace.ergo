@@ -72,7 +72,7 @@ exe-name = fn name -> match :target-os {
 compile = fn project-root file ^flags -> value:cache <| seq ^[
     out = path:join (path:new) (string:format "{}.o" <| path:relative :project-root :file)
     fs:create-dir <| path:parent :out
-    run (string:format "compiling {}" :file) ^{ env = { PATH = : } } :compiler ^:extra-cflags -c -o :out ^:flags (fs:track :file)
+    run (string:format "compiling {}" :file) ^{ env = { PATH = : } } :compiler ^:extra-cflags -c -o :out ^:flags :file
     :out
 ]
 
@@ -80,16 +80,45 @@ to-includes = fn header-dirs -> collection:fold (fn l dir -> [^:l,-I,:dir]) [] :
 
 with-context = fn f -> {apply-context = :f}
 
+make-header-paths = fn dir descr -> {
+    basename = fn f -> { [^_,f] = path:split :f; :f }
+    basic = fn descr -> match (value:force :descr) {
+        =auto = value:force <| collection:map (fn a -> {from = :a, to = basename :a}) <| fs:glob <| path:join :dir *.h
+        [^files] = value:force <| collection:map (fn a -> {from = :a, to = basename :a}) :files
+    }
+    match :descr {
+        {^dirs} = collection:fold (fn ret {key,value} -> [^:ret,^(collection:map (fn {from,to} -> {from,to = path:join :key :to}) <| basic :value)]) [] <| collection:entries :dirs
+        o = basic :o
+    }
+}
+
+#get-include-deps = fn f headers -> value:force <| value:cache {
+#    includes = exec sed -n -E "s/[[:space:]]*#include[[:space:]]*(\"|<)([^\">]+)(\"|>)/\\2/p" (fs:track :f) |>:stdout | string:from | string:trim | string:split "\n" | value:cache
+#    find-file = fn f -> {
+#        f = value:force :f
+#        collection:fold (fn a {from, to} -> unless :a (match :f { =(value:force :to) -> :from, _ => () })) () :headers
+#    }
+#    filter (fn f -> if (file:exists :f) :f <| find-file :f) :includes
+#}
+#
+#file-rely-deps = fn f headers -> seq (get-include-deps :f :headers) (fs:track :f)
+
 # Create a module in the given directory (used for auto parameters) with the given configuration.
 #
-# The configuration may be "auto", which will get all .cpp and .h files as the module contents.
-# Otherwise, it should be a map with the following optional keys:
+# The configuration may be "auto", which will get all .cpp and .h files as the
+# (non-public) module contents.  Otherwise, it should be a map with the
+# following optional keys:
 #   files: the files to compile, or "auto"
-#   headers: the headers to expose, or "auto"
+#   headers: the headers to expose
+#   public-headers: the headers to expose publicly, such that any libraries will expose them
 #   uses: the modules to use with this module
 #
-# The returned module generator function, when passed a compilation context, will return
-# a module output map with the following keys:
+# Headers may be an array of files, "auto", or a map where the keys represent a
+# directory, and values are "auto" or an array of files. "auto" will use all
+# *.h files in the module path.
+#
+# The returned module generator function, when passed a compilation context,
+# will return a module output map with the following keys:
 #   impl: an array of compiled object files
 #   header-dirs: an array of header directories exported by the module (and all directories from used modules)
 #   runtime: an array of any additional requirements of the module (inherited from used modules)
@@ -106,32 +135,37 @@ module = fn dir config -> {
     }
     files = default files
     headers = default headers
+    public-headers = default public-headers
     uses = default uses
 
     files = match (value:force :files) {
         =auto = value:force <| fs:glob <| path:join :dir *.cpp
         other = :other
     }
-    headers = match (value:force :headers) {
-        =auto = value:force <| fs:glob <| path:join :dir *.h
-        other = :other
-    }
+    headers = make-header-paths :dir :headers
+    public-headers = make-header-paths :dir :public-headers
 
     with-context (fn context -> {
         uses = collection:map (fn u -> u:apply-context :context) :uses
         header-dirs = collection:fold (fn l use -> [^:l,^use:header-dirs]) [] :uses
-        includes = to-includes :header-dirs
-        objects = collection:map (fn f -> compile context:project-root :f ^:includes ^context:cflags) :files
-        impl = collection:fold (fn l use -> [^:l,^use:impl]) :objects :uses
-        runtime = collection:fold (fn l use -> [^:l,^use:runtime,^(value:force <| unless use:runtime-if-used [])]) [] :uses
         header-dir = value:cache <| seq ^[
             dir = (path:new)
             fs:create-dir :dir
-            collection:map (fn f -> fs:copy (fs:track :f) :dir) :headers
+            collection:map (fn {from,to} -> fs:copy (fs:track :from) (path:join :dir :to)) :headers
+            collection:map (fn {from,to} -> fs:copy (fs:track :from) (path:join :dir :to)) :public-headers
             :dir
         ]
         header-dirs = [:header-dir,^:header-dirs]
-        { impl, header-dirs, runtime }
+        all-public-headers = collection:fold (fn l use -> [^:l,^use:public-headers]) :public-headers :uses
+        includes = to-includes :header-dirs
+
+        # Imbue dependencies into file
+        # files = collection:map (fn f -> file-rely-deps :f [^:headers,^:public-headers]) :files
+
+        objects = collection:map (fn f -> compile context:project-root :f ^:includes ^context:cflags) :files
+        impl = collection:fold (fn l use -> [^:l,^use:impl]) :objects :uses
+        runtime = collection:fold (fn l use -> [^:l,^use:runtime,^(value:force <| unless use:runtime-if-used [])]) [] :uses
+        { impl, header-dirs, public-headers = :all-public-headers, runtime }
     })
 }
 
@@ -146,7 +180,7 @@ link = fn ^{^kwargs} name mod additional-flags type -> with-context (fn context 
     lflags = [^context:lflags,^:kwlflags]
     mod = mod:apply-context {project-root = context:project-root, cflags, lflags}
     run (string:format "linking {} {}" :type :name) ^{ env = {PATH = :} } :compiler ^:extra-lflags ^:additional-flags ^:lflags -o :out "-Wl,--start-group" ^mod:impl "-Wl,--end-group"
-    { file = :out, impl = [:file], runtime = mod:runtime, runtime-if-used = [:file], header-dirs = mod:header-dirs }
+    { file = :out, impl = [:file,^mod:runtime], runtime = mod:runtime, runtime-if-used = [:file], header-dirs = mod:header-dirs }
 ])
 
 # Link a module into an executable.
@@ -187,4 +221,10 @@ static-library = fn ^{cflags} name mod -> with-context (fn context -> {
     dynamic-library
     static-library
     apply-context = fn project-root cflags lflags t -> t:apply-context {project-root,cflags,lflags}
+    name = {
+        static-library = static-library-name
+        dynamic-library = dynamic-library-name
+        exe = exe-name
+    }
+    target-os
 }

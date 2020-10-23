@@ -1,5 +1,6 @@
 #include "add2.h"
+#include "somefile.h"
 
 int main() {
-	return add2(40);
+	return add3(add2(37));
 }

@@ -1,1 +1,5 @@
-c++:module :work-dir auto
+c++:module :work-dir {
+    files = auto
+    headers = auto
+    uses = [ergo secondary]
+}
