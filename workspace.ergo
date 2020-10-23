@@ -3,6 +3,8 @@
 
 ^(ergo std)
 
+log = log sublog c++
+
 # If the first argument is a truth value, return it, otherwise return the second argument.
 unless = fn a b -> if :a :a :b
 
@@ -127,6 +129,7 @@ module = fn dir config -> {
         =auto = { files = auto, headers = auto }
         other = :other
     }
+
     default = fn name -> {
         match config::name {
             =() = []
