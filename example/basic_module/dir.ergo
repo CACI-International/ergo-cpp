@@ -1,5 +1,7 @@
-c++:module :work-dir {
+c++:module :script-dir {
     files = auto
-    headers = auto
+    headers = {
+        addition = auto
+    }
     uses = [ergo secondary]
 }

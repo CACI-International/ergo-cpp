@@ -1,4 +1,4 @@
-dyn-mod = c++:module :work-dir {
+dyn-mod = c++:module :script-dir {
     files = auto
     uses = [c++:dynamic-library add2 (ergo ../basic_module)]
 }

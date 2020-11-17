@@ -1,1 +1,1 @@
-c++:module :work-dir auto
+c++:module :script-dir auto
