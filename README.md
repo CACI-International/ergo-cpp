@@ -11,9 +11,10 @@ anyone can manually create a module if they want.
 
 This ergo project will attempt to read the environment variables CXX and AR to
 determine the c++ compiler and object file archiver to use, and will default to
-`c++` and `ar` when each respective variable is absent.
+`c++` and `ar` when each respective variable is absent. It assumes the c++
+compiler is also a frontend for linking.
 
-This project evaluates to a map/module with the following values exposed.
+This project evaluates to a map with the following values exposed:
 
 ### apply-context _project-root_ _cflags_ _lflags_ _value_
 Most of the functions take a context to return the final value. This function
@@ -83,3 +84,14 @@ to the context function, and will return a map with compatible keys for a module
 as well as the following keys:
 
 * file - the static archive
+
+### target-os
+The detected target OS of the toolchain. One of `windows`, `linux`, `mac`, or
+`unsupported`.
+
+### name
+A map containing functions to create file names for the target OS (adding
+appropriate prefixes and suffixes), including:
+* `static-library` for static library names
+* `dynamic-library` for dynamic library names
+* `exe` for executable names
