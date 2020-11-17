@@ -38,7 +38,8 @@ A function for creating a module. Provide a module directory (only used with
 directory), or it may be a map with the following (optional) keys:
 
 * files - an array of the files to compile, or "auto"
-* headers - an array of the headers to expose, or "auto"
+* headers - an array of the headers to expose, "auto", or a map of directory to
+  headers to expose (recursively the same structure)
 * uses - an array of the modules that this module depends upon
 
 This returns a value which should be passed to the context function, and will

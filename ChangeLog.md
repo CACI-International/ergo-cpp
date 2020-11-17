@@ -3,6 +3,7 @@
 ## 0.3.0  -- 2020-11-17
 * Update for ergo 1.0.0-beta.4.
 * With new features from the latest ergo, add header tracking.
+* Support header layout descriptions.
 
 ## 0.2.1  -- 2020-10-23
 * Support ccache and fix the invocation to detect the target os.
