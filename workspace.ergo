@@ -238,9 +238,9 @@ static-library = fn ^{cflags} name mod -> with-context (fn context -> {
     static-library
     apply-context = fn project-root cflags lflags t -> t:apply-context {project-root,cflags,lflags}
     name = {
-        static-library = static-library-name
-        dynamic-library = dynamic-library-name
-        exe = exe-name
+        static-library = :static-library-name
+        dynamic-library = :dynamic-library-name
+        exe = :exe-name
     }
     target-os
 }

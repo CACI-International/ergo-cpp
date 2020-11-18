@@ -1,5 +1,8 @@
 # ergo-c++ changelog
 
+## 0.3.1  -- 2020-11-18
+* Fix export bug for naming functions.
+
 ## 0.3.0  -- 2020-11-17
 * Update for ergo 1.0.0-beta.4.
 * With new features from the latest ergo, add header tracking.
