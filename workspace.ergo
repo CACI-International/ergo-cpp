@@ -32,7 +32,7 @@ archiver = env:path-search <| env_or AR ar
 extra-cflags = parse-env-flags CXXFLAGS
 extra-lflags = parse-env-flags LDFLAGS
 
-target-os = value:cache {
+target-os = value:by-content <| value:cache {
     preproc = "#if defined(_WIN32)
 \"windows\"
 #elif defined(__linux__)
