@@ -89,7 +89,7 @@ fix = fn f -> fn ^args ^{^kwargs} -> f :f ^:args ^:kwargs
 # Return a file path that depends on all include dependencies, given a map of header paths to dependencies
 # that will be used for includes that do not resolve to a file.
 set-file-deps = fn file untracked-cflags cflags known-headers -> {
-    deps = exec :compiler -MM -MG ^:untracked-cflags ^:cflags :file |>:stdout | string:from | string:trim
+    deps = exec ^{ env = { PATH = env:get PATH } } :compiler -MM -MG ^:untracked-cflags ^:cflags :file |>:stdout | string:from | string:trim
     [_,^parts] = string:split ":" :deps
     parts = collection:fold (fn arr p -> [^:arr,^(string:split "\\\n" :p)]) [] :parts
     parts = collection:fold (fn arr p -> [^:arr,^(string:split " " :p)]) [] :parts
