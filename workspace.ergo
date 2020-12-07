@@ -13,8 +13,8 @@ unless-map = fn m k else -> !if (collection:has :m :k) m::k :else
 # Return the value of an environment variable, or an alternative value if not set.
 env_or = fn name alternative -> value:by-content <| unless (env:get :name) :alternative
 
-# Run an executable as a task.
-run = fn description ^args ^{^kwargs} -> seq [:args,:kwargs] (task :description (exec ^:args ^:kwargs):complete)
+# Run an executable as a task (counting as one task).
+run = fn description ^args ^{^kwargs} -> task ^{task-count = 1} :description (exec ^:args ^:kwargs):complete
 
 filter = fn f arr -> collection:fold (fn acc v -> if (f :v) [^:acc,:v] :acc) [] :arr
 

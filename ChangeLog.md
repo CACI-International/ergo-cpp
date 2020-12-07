@@ -4,6 +4,7 @@
 * Fix bug with compiler invocation for header tracking.
   * The invocation did not pass the PATH environment variable, which breaks
     e.g. ccache.
+* Improve task behavior (ergo >= beta.6).
 
 ## 0.3.2  -- 2020-11-20
 * Fix bug with file names and `target-os`.
