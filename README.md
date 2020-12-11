@@ -16,17 +16,22 @@ compiler is also a frontend for linking.
 
 This project evaluates to a map with the following values exposed:
 
-### apply-context _project-root_ _cflags_ _lflags_ _value_
+### get-output _config_ _value_
 Most of the functions take a context to return the final value. This function
 creates and applies the context to a value returned by the other functions. The
-arguments are as follows:
+keys in `config` are as follows:
 
-* project-root - the root directory of the project, used for user-friendly debug
+* `project-root` (required) - the root directory of the project, used for user-friendly debug
   paths
-* cflags - an array of global compilation flags to use
-* lflags - an array of global linking flags to use
-* value - a value returned by `module`, `exe`, `dynamic-library`, or
-  `static-library`
+* `cflags` - an array of global compilation flags to use
+* `lflags` - an array of global linking flags to use
+
+Additional keys in `config` are passed in a map to cflags/lflags functions for
+`exe`, `dynamic-library`, `static-library`, and `module`.
+
+
+`value` should be a value returned by `module`, `exe`, `dynamic-library`, or
+`static-library`.
 
 The specific values returned once the context is applied are described for each
 function.
@@ -37,54 +42,80 @@ A function for creating a module. Provide a module directory (only used with
 "auto" for automatic behavior (taking all .cpp and .h files from the given
 directory), or it may be a map with the following (optional) keys:
 
-* files - an array of the files to compile, or "auto"
-* headers - an array of the headers to expose, "auto", or a map of directory to
+* `files` - an array of the files to compile, or "auto"
+* `headers` - an array of the headers to expose, "auto", or a map of directory to
   headers to expose (recursively the same structure)
-* uses - an array of the modules that this module depends upon
+* `uses` - an array of the modules that this module depends upon
+* `cflags` - a function from extra context arguments to an array of extra
+  compile flags
 
-This returns a value which should be passed to the context function, and will
+This returns a value which should be passed to `get-output`, and will
 return a map with the following keys:
 
-* impl - an array of compiled object files
-* header-dirs - an array of header directories exported by the module (including
+* `impl` - an array of compiled object files
+* `header-dirs` - an array of header directories exported by the module (including
   inherited directories from dependant modules)
-* runtime - an array of any additional requirements of the module (inherited
+* `header-deps` - a map of header paths to their resolved files
+* `runtime` - an array of any additional requirements of the module (inherited
   from dependant modules)
 
+When resolving header dependencies, the compiler will be invoked with
+`ERGO_CPP_HEADER_DEPENDS` defined in the preprocessor. If there are any
+conditional preprocessing steps that may fail, you may check for this and adjust
+logic appropriately.
 
-### exe _name_ _mod_
-Compile a module into an executable. The name is mainly used for making readable
-debug info. Additional keyword arguments `cflags` and `lflags` may be used to
-add flags for all files compiled and linked for this executable. This returns a
-value which should be passed to the context function, and will return a map with
-compatible keys for a module as well as the following keys:
+### exe _config_
+Compile a module into an executable. `config` must be a map with the following
+keys:
 
-* file - the compiled executable
-* exec - a function which will run the executable with `std exec` with the
+* `name` (required) - the name of the executable
+* `module` (required) - the module from which to create an executable
+* `cflags` - a function from extra context arguments to an array of extra
+  compile flags
+* `lflags` - a function from extra context arguments to an array of extra link
+  flags
+
+This returns a value which should be passed to `get-output`, and will return a
+map with compatible keys for a module as well as the following keys:
+
+* `file` - the compiled executable
+* `exec` - a function which will run the executable with `std exec` with the
   runtime appropriately set up
 
 
-### dynamic-library _name_ _mod_
-Compile a module into a dynamic library. The name is mainly used for making
-readable debug info. Additional keyword arguments `cflags` and `lflags` may be
-used to add flags for all files compiled and linked for this dynamic library.
-This returns a value which should be passed to the context function, and will
-return a map with compatible keys for a module as well as the following keys:
+### dynamic-library _config_
+Compile a module into a dynamic library. `config` must be a map with the
+following keys:
 
-* file - the compiled dynamic library
-* runtime-if-used - an array of additional runtime requirements if this library
-  is used as an input to other modules
+* `name` (required) - the name of the dynamic library
+* `module` (required) - the module from which to create a dynamic library
+* `cflags` - a function from extra context arguments to an array of extra
+  compile flags
+* `lflags` - a function from extra context arguments to an array of extra link
+  flags
+
+This returns a value which should be passed to `get-output`, and will return a
+map with compatible keys for a module as well as the following keys:
+
+* `file` - the compiled dynamic library
+* `runtime-if-used` - an array of additional runtime requirements if this
+  library is used as an input to other modules
 
 
-### static-library _name_ _mod_
-Compile a module into a static library. The name is mainly used for making
-readable debug info. Additional keyword argument `cflags` may be used to add
-flags for all files compiled for this static library. The static library will
-contain all dependant module files. This returns a value which should be passed
-to the context function, and will return a map with compatible keys for a module
-as well as the following keys:
+### static-library _config_
+Compile a module into a static library. `config` must be a map with the
+following keys:
 
-* file - the static archive
+* `name` (required) - the name of the static library
+* `module` (required) - the module from which to create a static library
+* `cflags` - a function from extra context arguments to an array of extra
+  compile flags
+
+The static library will contain all dependant module files. This returns a value
+which should be passed to `get-output`, and will return a map with compatible
+keys for a module as well as the following keys:
+
+* `file` - the static archive
 
 ### target-os
 The detected target OS of the toolchain. One of `windows`, `linux`, `mac`, or
@@ -96,3 +127,5 @@ appropriate prefixes and suffixes), including:
 * `static-library` for static library names
 * `dynamic-library` for dynamic library names
 * `exe` for executable names
+
+Note that all other functions automatically create appropriate names.

@@ -1,10 +1,14 @@
 # ergo-c++ changelog
 
-## 0.3.3  -- Unreleased
+## 0.4.0  -- 2020-12-11
 * Fix bug with compiler invocation for header tracking.
   * The invocation did not pass the PATH environment variable, which breaks
     e.g. ccache.
 * Improve task behavior (ergo >= beta.6).
+* Add a preprocessor value (`ERGO_CPP_HEADER_DEPENDS`) when checking header dependencies.
+  * This allows code to avoid problematic preprocessor directives.
+* Change functions to take named arguments.
+* Support setting cflags directly on modules.
 
 ## 0.3.2  -- 2020-11-20
 * Fix bug with file names and `target-os`.

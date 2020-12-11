@@ -1,6 +1,6 @@
-mod = c++:module :script-dir {
+module = c++:module :script-dir {
     files = auto
     uses = [ergo ../basic_module]
 }
 
-c++:exe forty_two :mod
+c++:exe {name = forty_two, module}

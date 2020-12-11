@@ -6,7 +6,7 @@ prelude = {c++}
 build = fn cflags lflags p -> {
     # Load requested output
     output = ergo (path:join :script-dir :p)
-    c++:apply-context :project-root :cflags :lflags :output
+    c++:get-output {project-root, cflags, lflags} :output
 }
 dist = fn result -> {
     seq ^[
