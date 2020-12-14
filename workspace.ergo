@@ -20,6 +20,7 @@ filter = fn f arr -> collection:fold (fn acc v -> if (f :v) [^:acc,:v] :acc) [] 
 
 parse-env-flags = fn var -> {
     strs = string:split " " (env_or :var "")
+    # collection:filter
     filter (fn v -> match (value:by-content :v) {
         ="" = ()
         _ = true
@@ -80,6 +81,7 @@ compile = fn project-root file untracked-flags ^flags -> value:cache <| seq ^[
     :out
 ]
 
+# collection:precede
 to-includes = fn header-dirs -> collection:fold (fn l dir -> [^:l,-I,:dir]) [] :header-dirs
 
 with-context = fn f -> {apply-context = :f}
@@ -95,6 +97,7 @@ fix = fn f -> fn ^args ^{^kwargs} -> f :f ^:args ^:kwargs
 # that will be used for includes that do not resolve to a file.
 set-file-deps = fn file untracked-cflags cflags known-headers -> {
     deps = exec ^{ env = { PATH = env:get PATH } } :compiler -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-cflags ^:cflags :file |>:stdout | string:from | string:trim
+    # string:regex
     [_,^parts] = string:split ":" :deps
     parts = collection:fold (fn arr p -> [^:arr,^(string:split "\\\n" :p)]) [] :parts
     parts = collection:fold (fn arr p -> [^:arr,^(string:split " " :p)]) [] :parts
@@ -108,6 +111,7 @@ set-file-deps = fn file untracked-cflags cflags known-headers -> {
 # Convert a path to an include string
 path-to-include = fn p -> {
     [a,^rest] = path:split :p
+    # string:join
     value:by-content <| collection:fold (fn s c -> string:format "{}/{}" :s :c) :a :rest
 }
 
@@ -172,6 +176,7 @@ module = fn dir config -> {
 
     with-context (fn context -> {
         uses = !collection:map (fn u -> u:apply-context :context) :uses
+        # collection:flatten
         header-dirs = collection:fold (fn l use -> [^:l,^use:header-dirs]) [] :uses
         header-dir = value:cache <| seq ^[
             dir = (path:new)
@@ -184,12 +189,16 @@ module = fn dir config -> {
         cflags = !if :cflags ![^context:cflags,^cflags context:extra] context:cflags
 
         # Create maps from header path to dependency
+        # collection:filter
         uses-header-deps = !collection:fold (fn m use -> !if (collection:has :use header-deps) {^:m,^use:header-deps} :m) {} :uses
+        # collection:map, collection:from-entries
         mod-header-deps = !collection:fold (fn m {from,to} -> {^:m, (path-to-include :to) = set-file-deps :from [-I,:header-dir] :cflags :uses-header-deps}) {} :headers
         header-deps = {^:uses-header-deps,^:mod-header-deps}
 
         objects = collection:map (fn f -> compile context:project-root (set-file-deps :f [] :cflags :header-deps) :includes ^:cflags) :files
+        # collection:flatten
         impl = collection:fold (fn l use -> [^:l,^use:impl]) :objects :uses
+        # collection:flatten
         runtime = collection:fold (fn l use -> [^:l,^use:runtime,^(value:by-content <| unless-map :use runtime-if-used [])]) [] :uses
         { impl, header-dirs, header-deps, runtime }
     })
@@ -250,8 +259,8 @@ static-library = fn {name,module,^kwargs} -> {
         fs:create-dir :out
         filename = static-library-name :name
         out = path:join :out :filename
-        cflags = !if (collection:has :kwargs cflags) ![^context:cflags,^kwargs:cflags] context:cflags
-        mod = module:apply-context { ^:context, cflags }
+        new-cflags = !if (collection:has :kwargs cflags) ![^context:cflags,^kwargs:cflags] context:cflags
+        mod = module:apply-context { ^:context, cflags = :new-cflags }
         run (string:format "creating static library {}" :filename) :archiver -crs :out ^mod:impl
         { file = :out, impl = [:file], runtime = mod:runtime, header-dirs = mod:header-dirs, header-deps = mod:header-deps }
     })
