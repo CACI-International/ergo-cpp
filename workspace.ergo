@@ -27,57 +27,64 @@ parse-env-flags = fn var -> {
     }) :strs
 }
 
-# Get default compiler/flags settings.
-compiler = env:path-search <| env_or CXX c++
-archiver = env:path-search <| env_or AR ar
-extra-cflags = parse-env-flags CXXFLAGS
-extra-lflags = parse-env-flags LDFLAGS
+toolchain = fn config -> {
+    compiler = unless-map :config compiler <| env_or CXX c++
+    archiver = unless-map :config archiver <| env_or AR ar
+    compile-flags = [^parse-env-flags CXXFLAGS, ^unless-map :config compile-flags []]
+    link-flags = [^parse-env-flags LDFLAGS, ^unless-map :config link-flags []]
 
-target-os = value:by-content <| value:cache {
-    preproc = "#if defined(_WIN32)
-\"windows\"
-#elif defined(__linux__)
-\"linux\"
-#elif defined(__APPLE__)
-\"mac\"
-#else
-\"unsupported\"
-#endif"
-    output = exec ^{ stdin = :preproc, env = { PATH = env:get PATH } } :compiler ^:extra-cflags -E -P - |>:stdout
-    :output | string:from | string:trim | string:split "\"" |>:1
+    detect = fn filename -> value:by-content {
+        file = path:join :script-dir detection :filename
+        output = exec ^{ env = { PATH = env:get PATH } } :compiler ^:compile-flags -E -P :file |>:stdout
+        output = :output | string:from | string:trim | string:split "\"" |>:1
+        !log debug <| string:format "detection file `{}` yielded `{}`" :filename :output
+        :output
+    }
+
+    {
+        compiler
+        archiver
+        compile-flags
+        link-flags
+        target = {
+            architecture = detect arch.h
+            os = detect os.h
+            compiler = detect compiler.h
+        }
+    }
 }
 
-!log debug <| string:format "detected os: {}" :target-os
-
-lib-path-env = fn path -> value:by-content (match :target-os {
-    =mac = { DYLD_LIBRARY_PATH = :path }
+lib-path-env = fn toolchain path -> value:by-content (match toolchain:target:os {
+    =macos = { DYLD_LIBRARY_PATH = :path }
+    =ios = { DYLD_LIBRARY_PATH = :path }
     =linux = { LD_LIBRARY_PATH = :path }
     _ = { PATH = :path }
 })
 
-static-library-name = fn name -> match :target-os {
+static-library-name = fn toolchain name -> match toolchain:target:os {
     =windows = string:format "{}.lib" :name
     _ = string:format "{}.a" :name
 }
 
-dynamic-library-name = fn name -> match :target-os {
+dynamic-library-name = fn toolchain name -> match toolchain:target:os {
     =windows = string:format "{}.dll" :name
     =linux = string:format "lib{}.so" :name
-    =mac = string:format "lib{}.dylib" :name
+    =macos = string:format "lib{}.dylib" :name
+    =ios = string:format "lib{}.dylib" :name
     _ = :name
 }
 
-exe-name = fn name -> match :target-os {
+exe-name = fn toolchain name -> match toolchain:target:os {
     =windows = string:format "{}.exe" :name
     _ = :name
 }
 
 # Compile a file with the given flags.
 # The project-root argument is used to ensure the file paths in compiled debug sections are user-friendly.
-compile = fn project-root file untracked-flags ^flags -> value:cache <| seq ^[
+compile = fn toolchain project-root file untracked-flags ^flags -> value:cache <| seq ^[
     out = path:join (path:new) (string:format "{}.o" <| path:relative :project-root :file)
     fs:create-dir <| path:parent :out
-    run (string:format "compiling {}" :file) ^{ env = { PATH = env:get PATH } } :compiler ^:extra-cflags -c -o :out ^(value:variable :untracked-flags) ^:flags :file
+    run (string:format "compiling {}" :file) ^{ env = { PATH = env:get PATH } } toolchain:compiler ^toolchain:compile-flags -c -o :out ^(value:variable :untracked-flags) ^:flags :file
     :out
 ]
 
@@ -95,14 +102,14 @@ fix = fn f -> fn ^args ^{^kwargs} -> f :f ^:args ^:kwargs
 
 # Return a file path that depends on all include dependencies, given a map of header paths to dependencies
 # that will be used for includes that do not resolve to a file.
-set-file-deps = fn file untracked-cflags cflags known-headers -> {
-    deps = exec ^{ env = { PATH = env:get PATH } } :compiler -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-cflags ^:cflags :file |>:stdout | string:from | string:trim
+set-file-deps = fn toolchain file untracked-compile-flags compile-flags known-headers -> {
+    deps = exec ^{ env = { PATH = env:get PATH } } toolchain:compiler ^toolchain:compile-flags -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-compile-flags ^:compile-flags :file |>:stdout | string:from | string:trim
     # string:regex
     [_,^parts] = string:split ":" :deps
     parts = collection:fold (fn arr p -> [^:arr,^(string:split "\\\n" :p)]) [] :parts
     parts = collection:fold (fn arr p -> [^:arr,^(string:split " " :p)]) [] :parts
     parts = collection:fold (fn arr p -> match :p { ="" = :arr, o = [^:arr,:o] }) [] :parts
-    parts = value:cache <| value:variable ^{ depends = [file-deps,fs:track :file,:cflags] } :parts
+    parts = value:cache <| value:variable ^{ depends = [file-deps, fs:track :file, toolchain:compiler, toolchain:compile-flags, :compile-flags] } :parts
     # existing files depend on the result of fs:track, otherwise look in known-headers
     depends = !collection:map (fn dep -> !if (fs:exists <| path:join :dep) (fs:track :dep) (unless-map :known-headers !:dep ())) :parts
     value:variable ^{ depends } :file
@@ -163,7 +170,7 @@ module = fn dir config -> {
     files = default files
     headers = default headers
     uses = default uses
-    cflags = unless-map :config cflags ()
+    compile-flags = unless-map :config compile-flags (fn e -> [])
 
     files = match (value:by-content :files) {
         =auto = value:by-content <| fs:glob <| path:join :dir *.cpp
@@ -186,16 +193,16 @@ module = fn dir config -> {
         ]
         header-dirs = [:header-dir,^uniq :header-dirs]
         includes = to-includes :header-dirs
-        cflags = !if :cflags ![^context:cflags,^cflags context:extra] context:cflags
+        compile-flags = compile-flags context:extra
 
         # Create maps from header path to dependency
         # collection:filter
         uses-header-deps = !collection:fold (fn m use -> !if (collection:has :use header-deps) {^:m,^use:header-deps} :m) {} :uses
         # collection:map, collection:from-entries
-        mod-header-deps = !collection:fold (fn m {from,to} -> {^:m, (path-to-include :to) = set-file-deps :from [-I,:header-dir] :cflags :uses-header-deps}) {} :headers
+        mod-header-deps = !collection:fold (fn m {from,to} -> {^:m, (path-to-include :to) = set-file-deps context:toolchain :from [-I,:header-dir] :compile-flags :uses-header-deps}) {} :headers
         header-deps = {^:uses-header-deps,^:mod-header-deps}
 
-        objects = collection:map (fn f -> compile context:project-root (set-file-deps :f [] :cflags :header-deps) :includes ^:cflags) :files
+        objects = collection:map (fn f -> compile context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags :header-deps) :includes ^:compile-flags) :files
         # collection:flatten
         impl = collection:fold (fn l use -> [^:l,^use:impl]) :objects :uses
         # collection:flatten
@@ -204,23 +211,30 @@ module = fn dir config -> {
     })
 }
 
+propagate-flags = fn ^{^kwargs} context -> {
+    get-flags = fn key -> value:by-content (if (collection:has :kwargs :key) (kwargs::key context:extra) [])
+    {
+        ^:context,
+        toolchain = {
+            ^context:toolchain
+            compile-flags = ![^context:toolchain:compile-flags, ^get-flags compile-flags]
+            link-flags = ![^context:toolchain:link-flags, ^get-flags link-flags]
+        }
+    }
+}
+
 # Link a module.
-link = fn ^{^kwargs} name mod additional-flags type include-headers -> {
+link = fn name mod additional-flags type include-headers -> {
     verify-module :mod
     with-context (fn context -> {
         out = (path:new)
         file = path:join :out :name
 
-        get-flags = fn key -> value:by-content (if (collection:has :kwargs :key) (kwargs::key context:extra) [])
-        kwcflags = get-flags cflags
-        kwlflags = get-flags lflags
-        new-cflags = ![^context:cflags,^:kwcflags]
-        new-lflags = ![^context:lflags,^:kwlflags]
-        mod = mod:apply-context {^:context, cflags = :new-cflags, lflags = :new-lflags}
+        mod = mod:apply-context :context
 
         file = value:cache <| seq ^[
             fs:create-dir :out
-            run (string:format "linking {} {}" :type :name) ^{ env = { PATH = env:get PATH } } :compiler ^:extra-lflags ^:additional-flags ^:new-lflags -o :file "-Wl,--start-group" ^mod:impl "-Wl,--end-group"
+            run (string:format "linking {} {}" :type :name) ^{ env = { PATH = env:get PATH } } context:toolchain:compiler ^context:toolchain:link-flags ^:additional-flags -o :file "-Wl,--start-group" ^mod:impl "-Wl,--end-group"
             :file
         ]
         ret = { file, impl = ![:file,^mod:runtime], runtime = mod:runtime, runtime-if-used = [:file] }
@@ -230,8 +244,9 @@ link = fn ^{^kwargs} name mod additional-flags type include-headers -> {
 
 # Link a module into an executable.
 exe = fn {name,module,^kwargs} -> {
-    mod = link ^:kwargs (exe-name :name) :module [] executable ()
     with-context (fn context -> {
+        context = propagate-flags ^:kwargs :context
+        mod = link (exe-name context:toolchain :name) :module [] executable ()
         ret = mod:apply-context :context
         {
             ^:ret
@@ -242,14 +257,24 @@ exe = fn {name,module,^kwargs} -> {
                     collection:map (fn f -> fs:copy :f :libpath) <| value:by-content ret:runtime
                     :libpath
                 ]
-                exec ^{ env = {}, ^:kwargs, env = { ^:env, ^(lib-path-env :libpath) } } ret:file ^:args
+                exec ^{ env = {}, ^:kwargs, env = { ^:env, ^(lib-path-env context:toolchain :libpath) } } ret:file ^:args
             }
         }
     })
 }
 
 # Link a module into a dynamic library.
-dynamic-library = fn {name,module,^kwargs} -> link ^{ cflags = fn _ -> [], ^:kwargs, cflags = fn e -> [^cflags :e,-fPIC] } (dynamic-library-name :name) :module [-shared] "dynamic library" true
+dynamic-library = fn {name,module,^kwargs} -> {
+    kwargs = {
+        compile-flags = fn _ -> []
+        ^:kwargs
+        compile-flags = fn e -> [^compile-flags :e,-fPIC]
+    }
+    with-context (fn context -> {
+        mod = link (dynamic-library-name context:toolchain :name) :module [-shared] "dynamic library" true
+        mod:apply-context <| propagate-flags ^:kwargs :context
+    })
+}
 
 # Link a module into a static library.
 static-library = fn {name,module,^kwargs} -> {
@@ -257,21 +282,19 @@ static-library = fn {name,module,^kwargs} -> {
     with-context (fn context -> {
         out = (path:new)
         fs:create-dir :out
-        filename = static-library-name :name
+        filename = static-library-name context:toolchain :name
         out = path:join :out :filename
-        new-cflags = !if (collection:has :kwargs cflags) ![^context:cflags,^kwargs:cflags] context:cflags
-        mod = module:apply-context { ^:context, cflags = :new-cflags }
-        run (string:format "creating static library {}" :filename) :archiver -crs :out ^mod:impl
+        mod = module:apply-context <| propagate-flags ^:kwargs :context
+        run (string:format "creating static library {}" :filename) context:toolchain:archiver -crs :out ^mod:impl
         { file = :out, impl = [:file], runtime = mod:runtime, header-dirs = mod:header-dirs, header-deps = mod:header-deps }
     })
 }
 
 get-output = fn {project-root,^kwargs} t -> {
     verify-module :t
-    cflags = unless-map :kwargs cflags []
-    lflags = unless-map :kwargs lflags []
-    extra = {^:kwargs, cflags=, lflags=}
-    t:apply-context {project-root, cflags, lflags, extra}
+    toolchain = unless-map :kwargs toolchain <| toolchain {}
+    extra = {^:kwargs, toolchain=}
+    t:apply-context {project-root, toolchain, extra}
 }
 
 {
@@ -285,5 +308,5 @@ get-output = fn {project-root,^kwargs} t -> {
         dynamic-library = :dynamic-library-name
         exe = :exe-name
     }
-    target-os
+    toolchain
 }
