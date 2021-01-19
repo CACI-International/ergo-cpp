@@ -1,29 +1,27 @@
-^(ergo std)
+^ergo std
 
 c++ = ergo ..
-project-root = :script-dir
+project-root = script:dir:
 prelude = {c++}
-build = fn cflags lflags p -> {
+build = fn :cflags :lflags :p -> {
     # Load requested output
-    output = ergo (path:join :script-dir :p)
+    output = ergo <| path:join :project-root :p
     c++:get-output {project-root, cflags, lflags} :output
 }
-dist = fn result -> {
-    seq ^[
-        out = path:join :script-dir dist
-        fs:create-dir :out
-        fs:copy result:file :out
-        collection:map (fn f -> fs:copy :f :out) result:runtime
-        ()
-    ]
-}
-build-debug = fn p -> build [-Og,-g] [-Og] :p
-debug = fn p -> dist <| build-debug :p
-release = fn p -> dist <| build [-O2] [-O2,-s] :p
-run = fn p -> build-debug :p |>:exec arg
+dist = fn :result -> seq ^[
+    out = path:join :project-root dist
+    fs:create-dir :out
+    fs:copy result:file :out
+    collection:map (fn :f -> fs:copy :f :out) result:runtime
+    ()
+]
+build-debug = fn :p -> build [-Og,-g] [-Og] :p
+debug = fn :p -> dist <| build-debug :p
+release = fn :p -> dist <| build [-O2] [-O2,-s] :p
+run = fn :p -> build-debug :p |>:exec arg
 
-command = fn cmd ^args -> match :cmd {
-    =debug = debug ^:args
-    =release = release ^:args
-    =run = run ^:args
-}
+command = fn :cmd ^:args -> match :cmd ^[
+    debug -> debug ^:args
+    release -> release ^:args
+    run -> run ^:args
+]
