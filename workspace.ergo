@@ -28,12 +28,12 @@ parse-env-flags = fn var -> {
 }
 
 toolchain = fn config -> {
-    compiler = unless-map :config compiler <| env_or CXX c++
-    archiver = unless-map :config archiver <| env_or AR ar
-    compile-flags = [^parse-env-flags CXXFLAGS, ^unless-map :config compile-flags []]
-    link-flags = [^parse-env-flags LDFLAGS, ^unless-map :config link-flags []]
+    compiler = env:path-search <| unless-map :config compiler c++
+    archiver = env:path-search <| unless-map :config archiver ar
+    compile-flags = unless-map :config compile-flags []
+    link-flags = unless-map :config link-flags []
 
-    detect = fn filename -> value:by-content {
+    detect = fn filename -> value:cache <| value:by-content {
         file = path:join :script-dir detection :filename
         output = exec ^{ env = { PATH = env:get PATH } } :compiler ^:compile-flags -E -P :file |>:stdout
         output = :output | string:from | string:trim | string:split "\"" |>:1
@@ -52,6 +52,13 @@ toolchain = fn config -> {
             compiler = detect compiler.h
         }
     }
+}
+
+env-toolchain = toolchain {
+    compiler = env_or CXX c++
+    archiver = env_or AR ar
+    compile-flags = env_or CXXFLAGS []
+    link-flags = env_or LDFLAGS []
 }
 
 lib-path-env = fn toolchain path -> value:by-content (match toolchain:target:os {
@@ -309,4 +316,5 @@ get-output = fn {project-root,^kwargs} t -> {
         exe = :exe-name
     }
     toolchain
+    env-toolchain
 }
