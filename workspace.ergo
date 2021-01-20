@@ -277,12 +277,13 @@ get-output = fn {project-root,^:kwargs} (Module :mod) -> {
 }
 
 {
+    type = {Module}
     module
     exe
     dynamic-library
     static-library
     get-output
-    :(value:doc:set name "toolchain file output naming conventions") = {
+    :(value:doc:set name "name: toolchain file output naming conventions") = {
         static-library = :static-library-name
         dynamic-library = :dynamic-library-name
         exe = :exe-name
