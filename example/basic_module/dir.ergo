@@ -1,4 +1,4 @@
-c++:module :script-dir {
+c++:module {
     files = auto
     headers = {
         addition = auto

@@ -1,4 +1,4 @@
-module = c++:module :script-dir {
+module = c++:module {
     files = auto
     uses = [ergo ../basic_module]
 }

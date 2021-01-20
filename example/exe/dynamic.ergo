@@ -1,4 +1,4 @@
-module = c++:module :script-dir {
+module = c++:module {
     files = auto
     uses = [c++:dynamic-library {name=add2, module = ergo ../basic_module}]
 }
