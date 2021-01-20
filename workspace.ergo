@@ -124,7 +124,7 @@ ByContent = pat :tgt -> :v -> {!:tgt = value:by-content :v}
 make-header-paths = fix (fn :self :dir :descr -> {
     !match :descr ^[
         type:String (ByContent auto) -> value:by-content <| collection:map (fn :a -> {from = :a, to = path:join <| path:name :a}) <| fs:glob <| path:join :dir *.h
-        [^:files] -> value:by-content <| collection:map (fn :a -> {from = :a, to = path:join <| path:name :a}) :files
+        [^:files] -> value:by-content <| collection:map (fn :a -> {from = path:join :dir :a, to = path:join <| path:name :a}) :files
         {^:dirs} -> {
             !collection:fold (fn :ret {key,value} -> [^:ret,^{
                 paths = self :self :dir :value
@@ -143,21 +143,28 @@ uniq = fn :arr -> {
 ## 
 ## The configuration may be "auto", which will get all .cpp and .h files in the calling script's directory as the
 ## (non-public) module contents. Otherwise, it should be a map with the following optional keys:
-##   files: the files to compile, or "auto"
-##   headers: the headers to expose
-##   uses: the modules to use with this module
+## * `files`: the files to compile, or "auto"
+## * `headers`: the headers to expose
+## * `uses`: the modules to use with this module
+## * `cflags`: additional compilation flags to use when compiling files in this module
 ## 
 ## Headers may be an array of files, "auto", or a map where the keys represent a
 ## directory, and values are "auto" or an array of files. "auto" will use all
 ## *.h files in the module path.
 ## 
-## The returned value will be a Module, which when applied to a context
-## will return an output map with the following keys:
-##   impl: an array of compiled object files
-##   header-dirs: an array of header directories exported by the module (and all directories from used modules)
-##   runtime: an array of any additional requirements of the module (inherited from used modules)
+## In both files and headers, if a file is a relative path, it will be relative to the script directory. When "auto" is used,
+## this directory is also used. To set it explicitly, pass the keyword argument `relative-dir`.
+## 
+## The returned value will be a Module, which when applied to a context will
+## return a map with the following keys:
+## * `impl`: an array of compiled object files
+## * `header-dirs`: an array of header directories exported by the module (and all directories from used modules)
+## * `header-deps`: a map from header paths to the file to which they resolve
+##   (where the file value also incorporates all header dependencies when deriving
+##   its identity)
+## * `runtime`: an array of any additional requirements of the module (inherited from used modules)
 module = fn ^{^:kwargs} :config -> {
-    dir = if (collection:has :kwargs auto-dir) kwargs:auto-dir (script:dir)
+    dir = if (collection:has :kwargs relative-dir) kwargs:relative-dir (script:dir)
     config = match :config ^[
         auto -> { files = auto, headers = auto }
         :other -> :other
@@ -171,7 +178,7 @@ module = fn ^{^:kwargs} :config -> {
 
     files = match :files ^[
         type:String (ByContent auto) -> value:by-content <| fs:glob <| path:join :dir *.cpp
-        :other -> :other
+        :other -> !collection:map (fn :f -> path:join :dir :f) :other
     ]
     headers = make-header-paths :dir (value:by-content :headers)
 
