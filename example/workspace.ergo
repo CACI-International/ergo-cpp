@@ -3,10 +3,10 @@
 c++ = ergo ..
 project-root = script:dir:
 prelude = {c++}
-build = fn :cflags :lflags :p -> {
+build = fn :toolchain :p -> {
     # Load requested output
     output = ergo <| path:join :project-root :p
-    c++:get-output {project-root, cflags, lflags} :output
+    c++:get-output {project-root, toolchain} :output
 }
 dist = fn :result -> seq ^[
     out = path:join :project-root dist
@@ -15,10 +15,20 @@ dist = fn :result -> seq ^[
     collection:map (fn :f -> fs:copy :f :out) result:runtime
     ()
 ]
-build-debug = fn :p -> build [-Og,-g] [-Og] :p
-debug = fn :p -> dist <| build-debug :p
-release = fn :p -> dist <| build [-O2] [-O2,-s] :p
-run = fn :p -> build-debug :p |>:exec arg
+
+debug-toolchain = c++:toolchain {
+    compile-flags = [-Og, -g]
+    link-flags = [-Og]
+}
+
+release-toolchain = c++:toolchain {
+    compile-flags = [-O2]
+    link-flags = [-O2, -s]
+}
+
+debug = fn :p -> dist <| build :debug-toolchain :p
+release = fn :p -> dist <| build :release-toolchain :p
+run = fn :p -> build :debug-toolchain :p |>:exec arg
 
 command = fn :cmd ^:args -> match :cmd ^[
     debug -> debug ^:args
