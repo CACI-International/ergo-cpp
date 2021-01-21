@@ -1,5 +1,18 @@
 # ergo-c++ changelog
 
+## 0.5.0  -- 2021-01-21
+* Toolchains to be used are now parameterized.
+  * Use `toolchain` to create a toolchain from a configuration, and pass it into
+    `get-output`.
+  * The previous `target` functions are now in the produced toolchain.
+* Add `env-toolchain` to get a toolchain based on the environment.
+* Update to ergo beta.8.
+* Use a `Module` type for c++ modules.
+* Allow paths in `files` and `headers` to be relative. Do not require specifying
+  the relative directory (it will default to the executing script's directory),
+  though it can be set with the non-positional argument `relative-dir` to the
+  `module` function.
+
 ## 0.4.0  -- 2020-12-11
 * Fix bug with compiler invocation for header tracking.
   * The invocation did not pass the PATH environment variable, which breaks
