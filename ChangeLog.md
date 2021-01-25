@@ -1,5 +1,11 @@
 # ergo-c++ changelog
 
+## 0.6.0  -- 2021-01-25
+* Simplify `headers` and `files` definitions. Remove support for `auto` for
+  both, as well as for `module`.
+* Add `all-files` and `header-paths` to replace functionality previously built-in
+  to `module`.
+
 ## 0.5.1  -- 2021-01-25
 * Allow headers to be plain strings (to be interpreted as relative paths).
 

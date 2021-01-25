@@ -36,18 +36,20 @@ Additional keys in `config` are passed in a map to cflags/lflags functions for
 The specific values returned once the context is applied are described for each
 function.
 
-### module _dir_ _config_
-A function for creating a module. Provide a module directory (only used with
-"auto" configurations) and a configuration. The configuration may be the string
-"auto" for automatic behavior (taking all .cpp and .h files from the given
-directory), or it may be a map with the following (optional) keys:
+### module _config_
+A function for creating a module. The configuration must be a map with the
+following (optional) keys:
 
-* `files` - an array of the files to compile, or "auto"
-* `headers` - an array of the headers to expose, "auto", or a map of directory to
-  headers to expose (recursively the same structure)
+* `files` - an array of the files to compile
+* `headers` - a map where keys are the destination `#include` path and values
+  are the source file path
 * `uses` - an array of the modules that this module depends upon
 * `cflags` - a function from extra context arguments to an array of extra
   compile flags
+
+Any relative directories in `files` or `headers` are relative to the calling
+script's parent directory. This may be explicitly specified with the keyword
+argument `relative-dir`.
 
 This returns a value which should be passed to `get-output`, and will
 return a map with the following keys:
