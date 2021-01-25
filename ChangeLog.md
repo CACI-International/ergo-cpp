@@ -1,5 +1,8 @@
 # ergo-c++ changelog
 
+## 0.5.1  -- 2021-01-21
+* Allow headers to be plain strings (to be interpreted as relative paths).
+
 ## 0.5.0  -- 2021-01-21
 * Toolchains to be used are now parameterized.
   * Use `toolchain` to create a toolchain from a configuration, and pass it into

@@ -154,7 +154,7 @@ ByContent = pat :tgt -> :v -> {!:tgt = value:by-content :v}
 make-header-paths = fix (fn :self :dir :descr -> {
     !match :descr ^[
         type:String (ByContent auto) -> value:by-content <| collection:map (fn :a -> {from = :a, to = path:join <| path:name :a}) <| fs:glob <| path:join :dir *.h
-        [^:files] -> value:by-content <| collection:map (fn :a -> {from = path:join :dir :a, to = path:join <| path:name :a}) :files
+        [^:files] -> value:by-content <| collection:map (fn :a -> {from = path:join :dir :a, to = path:join <| path:name <| path:join :a}) :files
         {^:dirs} -> {
             !collection:fold (fn :ret {key,value} -> [^:ret,^{
                 paths = self :self :dir :value
