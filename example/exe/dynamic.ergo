@@ -1,5 +1,5 @@
 module = c++:module {
-    files = auto
+    files = c++:all-files:
     uses = [c++:dynamic-library {name=add2, module = ergo ../basic_module}]
 }
 

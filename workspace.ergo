@@ -141,25 +141,28 @@ set-file-deps = fn :toolchain :file :untracked-compile-flags :compile-flags :kno
     value:variable ^{ depends } :file
 }
 
-## Convert a path to an include string.
-path-to-include = fn :p -> {
-    [:a,^:rest] = path:split :p
-    # string:join
-    value:by-content <| collection:fold (fn :s :c -> string:format "{}/{}" :s :c) :a :rest
-}
 
 ByContent = pat :tgt -> :v -> {!:tgt = value:by-content :v}
 
-## Returns a map of include paths (as strings) to tracked header files.
-make-header-paths = fix (fn :self :dir :descr -> {
+## Get `files` in the current directory.
+all-files = fn: -> fs:glob *.cpp
+
+## Get `headers` from a heirarchical description.
+## Accepts 'all', an array, or a map where keys are the `#include` path component and values are
+## recursively evaluated.
+##
+## The return value is suitable to be passed directly as the `headers` key in the `module`
+## configuration.
+header-paths = fix (fn :self :descr -> {
     !match :descr ^[
-        type:String (ByContent auto) -> value:by-content <| collection:map (fn :a -> {from = :a, to = path:join <| path:name :a}) <| fs:glob <| path:join :dir *.h
-        [^:files] -> value:by-content <| collection:map (fn :a -> {from = path:join :dir :a, to = path:join <| path:name <| path:join :a}) :files
+        type:String (ByContent all) -> value:by-content <| collection:fold (fn :m :a -> {^:m, :(value:by-content (path:join (path:name :a))) = :a}) {} <| fs:glob *.h
+        [^:files] -> value:by-content <| collection:fold (fn :m :a -> {^:m, :(value:by-content (path:join (path:name (path:join :a)))) = path:join :dir :a}) {} :files
         {^:dirs} -> {
-            !collection:fold (fn :ret {key,value} -> [^:ret,^{
-                paths = self :self :dir :value
-                !collection:map (fn {from,to} -> {from,to = path:join :key :to}) :paths
-            }]) [] <| collection:entries :dirs
+            !collection:fold (fn :ret {key,value=:v} -> {^:ret,^{
+                paths = self :self :v
+                key = path:join ^(string:split / :key)
+                !collection:fold (fn :m {key=:to,value=:from} -> {^:m, :(value:by-content (path:join :key :to)) = :from}) {} <| collection:entries :paths
+            }}) {} <| collection:entries :dirs
         }
     ]
 })
@@ -170,21 +173,26 @@ uniq = fn :arr -> {
     !collection:fold (fn :state :a -> !if (collection:has state:0 :a) :state [{^state:0, :a = ()},[^state:1,:a]]) [{},[]] :arr |>:1
 }
 
+## Convert a path to an include string.
+path-to-include = fn :p -> {
+    [:a,^:rest] = path:split :p
+    # string:join
+    value:by-content <| collection:fold (fn :s :c -> string:format "{}/{}" :s :c) :a :rest
+}
+
 ## Create a module with the given configuration.
+##
+## Arguments: <Map config>
 ## 
-## The configuration may be "auto", which will get all .cpp and .h files in the calling script's directory as the
-## (non-public) module contents. Otherwise, it should be a map with the following optional keys:
-## * `files`: the files to compile, or "auto"
-## * `headers`: the headers to expose
+## The configuration should be a map with the following optional keys:
+## * `files`: an array of the files to compile
+## * `headers`: a map with the headers to expose, where the key is the `#include` Path and the value
+##   is the header file Path.
 ## * `uses`: the modules to use with this module
 ## * `cflags`: additional compilation flags to use when compiling files in this module
 ## 
-## Headers may be an array of files, "auto", or a map where the keys represent a
-## directory, and values are "auto" or an array of files. "auto" will use all
-## *.h files in the module path.
-## 
-## In both files and headers, if a file is a relative path, it will be relative to the script directory. When "auto" is used,
-## this directory is also used. To set it explicitly, pass the keyword argument `relative-dir`.
+## In both files and headers, if a file is a relative path, it will be relative to the calling
+## script directory. To set the relative path explicitly, pass the keyword argument `relative-dir`.
 ## 
 ## The returned value will be a Module, which when applied to a context will
 ## return a map with the following keys:
@@ -196,22 +204,15 @@ uniq = fn :arr -> {
 ## * `runtime`: an array of any additional requirements of the module (inherited from used modules)
 module = fn ^{^:kwargs} :config -> {
     dir = if (collection:has :kwargs relative-dir) kwargs:relative-dir (script:dir)
-    config = match :config ^[
-        auto -> { files = auto, headers = auto }
-        :other -> :other
-    ]
 
-    default = fn :name -> unless-map :config :name []
-    files = default files
-    headers = default headers
-    uses = default uses
+    default = fn :name :value -> unless-map :config :name :value
+    files = default files []
+    headers = default headers {}
+    uses = default uses []
     compile-flags = unless-map :config compile-flags (fn :e -> [])
 
-    files = match :files ^[
-        type:String (ByContent auto) -> value:by-content <| fs:glob <| path:join :dir *.cpp
-        :other -> !collection:map (fn :f -> path:join :dir :f) :other
-    ]
-    headers = make-header-paths :dir (value:by-content :headers)
+    files = !collection:map (fn :f -> path:join :dir :f) :files
+    headers = !collection:map (fn {key=:to,value=:from} -> {to, from = path:join :dir :from}) <| collection:entries :headers
 
     # unpack uses to immediately verify they are modules
     uses = !collection:map (fn (Module :u) -> :u) :uses
@@ -223,7 +224,7 @@ module = fn ^{^:kwargs} :config -> {
         header-dir = value:cache <| seq ^[
             dir = path:new:
             fs:create-dir :dir
-            collection:map (fn {from,to} -> fs:copy (fs:track :from) (path:join :dir :to)) :headers
+            collection:map (fn {from,to,^_} -> fs:copy (fs:track :from) (path:join :dir :to)) :headers
             :dir
         ]
         header-dirs = [:header-dir,^uniq :header-dirs]
@@ -234,7 +235,7 @@ module = fn ^{^:kwargs} :config -> {
         # collection:filter
         uses-header-deps = !collection:fold (fn :m :use -> !if (collection:has :use header-deps) {^:m,^use:header-deps} :m) {} :uses
         # collection:map, collection:from-entries
-        mod-header-deps = !collection:fold (fn :m {from,to} -> {^:m, :(path-to-include :to) = set-file-deps context:toolchain :from [-I,:header-dir] :compile-flags :uses-header-deps}) {} :headers
+        mod-header-deps = !collection:fold (fn :m {from,to,^_} -> {^:m, :(path-to-include :to) = set-file-deps context:toolchain :from [-I,:header-dir] :compile-flags :uses-header-deps}) {} :headers
         header-deps = {^:uses-header-deps,^:mod-header-deps}
 
         objects = collection:map (fn :f -> compile context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags :header-deps) :includes ^:compile-flags) :files
@@ -344,4 +345,6 @@ get-output = fn {project-root,^:config} (Module :mod) -> {
     get-output
     toolchain
     env-toolchain
+    all-files
+    header-paths
 }
