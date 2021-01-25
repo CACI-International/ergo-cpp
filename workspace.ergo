@@ -42,12 +42,14 @@ toolchain = fn :config -> {
     compile-flags = unless-map :config compile-flags []
     link-flags = unless-map :config link-flags []
 
-    detect = fn :filename -> value:cache <| value:by-content {
-        file = path:join :script-dir detection :filename
-        output = exec ^{ env = { PATH = env:get PATH } } :compiler ^:compile-flags -E -P :file |>:stdout
-        output = string:from :output | string:trim | string:split "\"" |>:1
-        !log debug <| string:format "detection file `{}` yielded `{}`" :filename :output
-        :output
+    detect = fn :filename -> {
+        result = value:cache {
+            file = path:join :script-dir detection :filename
+            output = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -E -P :file |>:stdout
+            string:from :output | string:trim | string:split "\"" |>:1
+        }
+        !log debug <| string:format "detection file `{}` yielded `{}`" :filename :result
+        :result
     }
 
     {
