@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## 0.6.1  -- 2021-01-27
+* Fix deduplication function that broke with syntax changes in ergo 8.
+* Deduplicate runtime and impl lists in modules.
+
 ## 0.6.0  -- 2021-01-25
 * Simplify `headers` and `files` definitions. Remove support for `auto` for
   both, as well as for `module`.

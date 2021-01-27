@@ -172,7 +172,7 @@ header-paths = fix (fn :self :descr -> {
 ## Remove duplicate values in an array.
 # collection:unique
 uniq = fn :arr -> {
-    !collection:fold (fn :state :a -> !if (collection:has state:0 :a) :state [{^state:0, :a = ()},[^state:1,:a]]) [{},[]] :arr |>:1
+    !collection:fold (fn :state :a -> !if (collection:has state:0 :a) :state [{^state:0, ::a = ()},[^state:1,:a]]) [{},[]] :arr |>:1
 }
 
 ## Convert a path to an include string.
@@ -242,9 +242,10 @@ module = fn ^{^:kwargs} :config -> {
 
         objects = collection:map (fn :f -> compile context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags :header-deps) :includes ^:compile-flags) :files
         # collection:flatten
-        impl = collection:fold (fn :l :use -> [^:l,^use:impl]) :objects :uses
+
+        impl = uniq <| collection:fold (fn :l :use -> [^:l,^use:impl]) :objects :uses
         # collection:flatten
-        runtime = collection:fold (fn :l :use -> [^:l,^use:runtime,^(value:by-content <| unless-map :use runtime-if-used [])]) [] :uses
+        runtime = uniq <| collection:fold (fn :l :use -> [^:l,^use:runtime,^(value:by-content <| unless-map :use runtime-if-used [])]) [] :uses
         { impl, header-dirs, header-deps, runtime }
     })
 }
