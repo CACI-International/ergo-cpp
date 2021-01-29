@@ -46,10 +46,20 @@ toolchain = fn :config -> {
         result = value:cache {
             file = path:join :script-dir detection :filename
             output = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -E -P :file |>:stdout
-            string:from :output | string:trim | string:split "\"" |>:1
+            string:from :output | string:trim | string:split "^^" |>:1
         }
         !log debug <| string:format "detection file `{}` yielded `{}`" :filename :result
         :result
+    }
+
+    detect-cxx-abi = fn :testfile -> {
+        compiled_output = seq ^[
+            output_path = path:new:
+            exec (env = {PATH = env:get PATH}) :compiler ^:compile-flags -o :output_path (path:join :script-dir detection :testfile)
+            :output_path
+        ]
+        grep = exec (env:path-search grep) cxx11 :compiled_output
+        value:cache {if grep:exit-status cxx11 cxx03}
     }
 
     {
@@ -61,6 +71,11 @@ toolchain = fn :config -> {
             architecture = detect arch.h
             os = detect os.h
             compiler = detect compiler.h
+            cpplib = detect cpplib.h
+            cxxabi = match :os ^[
+                linux -> detect-cxx-abi abi_test.cpp
+                _     -> cxx11
+            ]
 
             # The below should be doc comments, but ergo beta 8 has a bug where it doesn't parse correctly.
             # The bug has been fixed, and the next release will allow these to be doc comments again.

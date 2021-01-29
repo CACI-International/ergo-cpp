@@ -1,9 +1,9 @@
 #if defined(__clang__)
-    "clang"
+    ^^clang^^
 #elif defined(__GNUC__)
-    "gcc"
+    ^^gcc^^
 #elif defined(_MSC_VER)
-    "msvc"
+    ^^msvc^^
 #else
-    "unknown"
+    ^^unknown^^
 #endif
