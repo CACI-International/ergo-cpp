@@ -93,9 +93,7 @@ toolchain = fn :config -> {
                 windows -> fn :name -> string:format "{}.exe" :name
                 _       -> fn :name -> :name
             ]
-
         }
-
     }
 }
 
