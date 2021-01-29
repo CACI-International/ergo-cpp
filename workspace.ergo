@@ -94,16 +94,6 @@ toolchain = fn :config -> {
                 _       -> fn :name -> :name
             ]
 
-            # Get the right linker flags for grouping
-            start-group-flag = match :os ^[
-                linux -> "-Wl,--start-group"
-                _     -> ""
-            ]
-
-            end-group-flag = match :os ^[
-                linux -> "-Wl,--end-group"
-                _     -> ""
-            ]
         }
 
     }
@@ -282,9 +272,19 @@ link = fn :name (Module :mod) :additional-flags :type :include-headers -> {
 
         mod = mod :context
 
+        start-group-flag = match context:toolchain:target:os ^[
+            linux -> "-Wl,--start-group"
+            _     -> ""
+        ]
+
+        end-group-flag = match context:toolchain:target:os ^[
+            linux -> "-Wl,--end-group"
+            _     -> ""
+        ]
+
         file = value:cache <| seq ^[
             fs:create-dir :out
-            run (string:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler ^context:toolchain:link-flags ^:additional-flags -o :file context:toolchain:target:start-group-flag ^mod:impl context:toolchain:target:end-group-flag
+            run (string:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler ^context:toolchain:link-flags ^:additional-flags -o :file :start-group-flag ^mod:impl :end-group-flag
             :file
         ]
         ret = { file, impl = [:file,^mod:runtime], runtime = mod:runtime, runtime-if-used = [:file] }
