@@ -93,7 +93,19 @@ toolchain = fn :config -> {
                 windows -> fn :name -> string:format "{}.exe" :name
                 _       -> fn :name -> :name
             ]
+
+            # Get the right linker flags for grouping
+            start-group-flag = match :os ^[
+                linux -> "-Wl,--start-group"
+                _     -> ""
+            ]
+
+            end-group-flag = match :os ^[
+                linux -> "-Wl,--end-group"
+                _     -> ""
+            ]
         }
+
     }
 }
 
@@ -272,7 +284,7 @@ link = fn :name (Module :mod) :additional-flags :type :include-headers -> {
 
         file = value:cache <| seq ^[
             fs:create-dir :out
-            run (string:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler ^context:toolchain:link-flags ^:additional-flags -o :file "-Wl,--start-group" ^mod:impl "-Wl,--end-group"
+            run (string:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler ^context:toolchain:link-flags ^:additional-flags -o :file context:toolchain:target:start-group-flag ^mod:impl context:toolchain:target:end-group-flag
             :file
         ]
         ret = { file, impl = [:file,^mod:runtime], runtime = mod:runtime, runtime-if-used = [:file] }
