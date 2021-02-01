@@ -59,7 +59,7 @@ toolchain = fn :config -> {
             :output_path
         ]
         grep = exec (env:path-search grep) cxx11 :compiled_output
-        value:cache {if grep:exit-status c++11 c++03}
+        value:by-content <| value:cache (if grep:exit-status c++11 c++03)
     }
 
     {
