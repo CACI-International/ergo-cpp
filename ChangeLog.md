@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## 0.6.2 -- 2021-02-01
+* Add C++ library and ABI detection keys to the toolchain target map
+* Fix linker errors on macOS, which groups everything by default
+
 ## 0.6.1  -- 2021-01-27
 * Fix deduplication function that broke with syntax changes in ergo 8.
 * Deduplicate runtime and impl lists in modules.

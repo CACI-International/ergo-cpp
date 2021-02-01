@@ -73,7 +73,7 @@ toolchain = fn :config -> {
             compiler = detect compiler.h
             c++lib = detect cpplib.h
 
-            c++abi = match :c++lib ^[
+            c++abi = !match :c++lib ^[
                 libstdc++ -> detect-c++-abi abi_test.cpp
                 _         -> c++11
             ]
@@ -287,12 +287,12 @@ link = fn :name (Module :mod) :additional-flags :type :include-headers -> {
 
         mod = mod :context
 
-        start-group-flag = match context:toolchain:target:os ^[
+        start-group-flag = !match context:toolchain:target:os ^[
             linux -> "-Wl,--start-group"
             _     -> ""
         ]
 
-        end-group-flag = match context:toolchain:target:os ^[
+        end-group-flag = !match context:toolchain:target:os ^[
             linux -> "-Wl,--end-group"
             _     -> ""
         ]
