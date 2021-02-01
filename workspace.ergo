@@ -71,15 +71,13 @@ toolchain = fn :config -> {
             architecture = detect arch.h
             os = detect os.h
             compiler = detect compiler.h
-
             c++lib = detect cpplib.h
-            !log debug <| string:format "c++lib is `{}`" :c++lib
 
             c++abi = match :c++lib ^[
                 libstdc++ -> detect-c++-abi abi_test.cpp
                 _         -> c++11
             ]
-            !log debug <| string:format "target ABI is `{}`" :c++abi
+            !log debug <| string:format "detected target ABI is `{}`" :c++abi
 
             # The below should be doc comments, but ergo beta 8 has a bug where it doesn't parse correctly.
             # The bug has been fixed, and the next release will allow these to be doc comments again.
