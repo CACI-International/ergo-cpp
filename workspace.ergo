@@ -49,7 +49,17 @@ toolchain = fn :config -> {
             string:from :output | string:trim | string:split "\"" |>:1
         }
         !log debug <| string:format "detection file `{}` yielded `{}`" :filename :result
-        :result
+        value:by-content :result
+    }
+
+    detect-c++-abi = fn :testfile -> {
+        compiled_output = seq ^[
+            output_path = path:new:
+            exec (env = {PATH = env:get PATH}) :compiler ^:compile-flags -o :output_path (path:join :script-dir detection :testfile)
+            :output_path
+        ]
+        grep = exec (env:path-search grep) cxx11 :compiled_output
+        value:by-content <| value:cache (if grep:exit-status c++11 c++03)
     }
 
     {
@@ -61,6 +71,13 @@ toolchain = fn :config -> {
             architecture = detect arch.h
             os = detect os.h
             compiler = detect compiler.h
+            c++lib = detect cpplib.h
+
+            c++abi = !match :c++lib ^[
+                libstdc++ -> detect-c++-abi abi_test.cpp
+                _         -> c++11
+            ]
+            !log debug <| string:format "detected target ABI is `{}`" :c++abi
 
             # The below should be doc comments, but ergo beta 8 has a bug where it doesn't parse correctly.
             # The bug has been fixed, and the next release will allow these to be doc comments again.
@@ -270,9 +287,19 @@ link = fn :name (Module :mod) :additional-flags :type :include-headers -> {
 
         mod = mod :context
 
+        start-group-flag = !match context:toolchain:target:os ^[
+            linux -> "-Wl,--start-group"
+            _     -> ""
+        ]
+
+        end-group-flag = !match context:toolchain:target:os ^[
+            linux -> "-Wl,--end-group"
+            _     -> ""
+        ]
+
         file = value:cache <| seq ^[
             fs:create-dir :out
-            run (string:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler ^context:toolchain:link-flags ^:additional-flags -o :file "-Wl,--start-group" ^mod:impl "-Wl,--end-group"
+            run (string:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler ^context:toolchain:link-flags ^:additional-flags -o :file :start-group-flag ^mod:impl :end-group-flag
             :file
         ]
         ret = { file, impl = [:file,^mod:runtime], runtime = mod:runtime, runtime-if-used = [:file] }
