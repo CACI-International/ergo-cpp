@@ -1,18 +1,18 @@
 #if defined(_WIN32)
-    ^^windows^^
+    "windows"
 #elif defined(__linux__)
-    ^^linux^^
+    "linux"
 #elif defined(__APPLE__)
     #include <TargetConditionals.h>
     #if TARGET_IPHONE_SIMULATOR
-    ^^ios-simulator^^
+    "ios-simulator"
     #elif TARGET_OS_IPHONE
-    ^^ios^^
+    "ios"
     #elif TARGET_OS_MAC
-    ^^macos^^
+    "macos"
     #else
-    ^^unknown^^
+    "unknown"
     #endif
 #else
-    ^^unknown^^
+    "unknown"
 #endif

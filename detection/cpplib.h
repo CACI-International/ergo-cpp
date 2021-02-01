@@ -1,8 +1,8 @@
-#include <string>
+#include <version>
 #if defined(__GLIBCXX__)
-^^libstdc++^^
+    "libstdc++"
 #elif defined(_LIBCPP_VERSION)
-^^libc++^^
+    "libc++"
 #else
-^^unknown^^
+    "unknown"
 #endif

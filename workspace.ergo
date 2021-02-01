@@ -46,7 +46,7 @@ toolchain = fn :config -> {
         result = value:cache {
             file = path:join :script-dir detection :filename
             output = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -E -P :file |>:stdout
-            string:from :output | string:trim | string:split "^^" |>:1
+            string:from :output | string:trim | string:split "\"" |>:1
         }
         !log debug <| string:format "detection file `{}` yielded `{}`" :filename :result
         value:by-content :result
