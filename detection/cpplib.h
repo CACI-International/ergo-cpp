@@ -1,4 +1,4 @@
-#include <version>
+#include <cassert>
 #if defined(__GLIBCXX__)
     "libstdc++"
 #elif defined(_LIBCPP_VERSION)
