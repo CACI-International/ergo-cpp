@@ -346,7 +346,7 @@ static-library = fn {name,module=Module :mod,^:kwargs} -> {
     Module (fn :context -> {
         out = path:new:
         fs:create-dir :out
-        filename = static-library-name context:toolchain :name
+        filename = context:toolchain:target:static-library-name :name
         out = path:join :out :filename
         mod = mod <| propagate-flags ^:kwargs :context
         run (string:format "creating static library {}" :filename) context:toolchain:archiver -crs :out ^mod:impl
