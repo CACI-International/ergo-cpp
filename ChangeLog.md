@@ -1,10 +1,10 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.6.3  -- 2021-02-02
 * Use `#include <cassert>` rather than c++20's `#include <version>` in stdlib detection.
 * Fix `static-library` functionality.
 
-## 0.6.2 -- 2021-02-01
+## 0.6.2  -- 2021-02-01
 * Add C++ library and ABI detection keys to the toolchain target map
 * Fix linker errors on macOS, which groups everything by default
 
