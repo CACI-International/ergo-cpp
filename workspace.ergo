@@ -37,8 +37,14 @@ parse-env-flags = fn :var -> {
 ## * `compile-flags` - Flags to always pass to `compiler` when compiling source code.
 ## * `link-flags` - Flags to always pass to `compiler` when linking compiled code.
 toolchain = fn :config -> {
-    compiler = env:path-search <| unless-map :config compiler c++
-    archiver = env:path-search <| unless-map :config archiver ar
+    compiler = match (unless-map :config compiler c++) ^[
+        type:String :s -> env:path-search :s
+        type:Path :p -> :p
+    ]
+    archiver = match (unless-map :config archiver ar) ^[
+        type:String :s -> env:path-search :s
+        type:Path :p -> :p
+    ]
     compile-flags = unless-map :config compile-flags []
     link-flags = unless-map :config link-flags []
 
