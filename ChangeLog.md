@@ -1,5 +1,8 @@
 # ergo-c++ changelog
 
+## 0.6.4  -- 2021-02-04
+* Allow `compiler` and `archiver` to be specified as paths to binaries
+
 ## 0.6.3  -- 2021-02-02
 * Use `#include <cassert>` rather than c++20's `#include <version>` in stdlib detection.
 * Fix `static-library` functionality.
