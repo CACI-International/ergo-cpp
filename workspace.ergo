@@ -249,7 +249,7 @@ module = fn ^{^:kwargs} :config -> {
         header-dir = value:cache <| seq ^[
             dir = path:new:
             fs:create-dir :dir
-            collection:map (fn {from,to,^_} -> fs:copy (fs:track :from) (path:join :dir :to)) :headers
+            !collection:map (fn {from,to,^_} -> fs:copy (fs:track :from) (path:join :dir :to)) :headers
             :dir
         ]
         header-dirs = [:header-dir,^uniq :header-dirs]

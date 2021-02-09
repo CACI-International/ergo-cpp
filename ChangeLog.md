@@ -1,5 +1,10 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Correctly track headers in `header-dirs` output for each module.
+  * Previously there was a bug where, if a header was changed, it did not
+    consider it different and did not generate a new header directory.
+
 ## 0.6.4  -- 2021-02-04
 * Allow `compiler` and `archiver` to be specified as paths to binaries
 
