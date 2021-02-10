@@ -29,23 +29,29 @@ parse-env-flags = fn :var -> {
     filter (fn :v -> match (value:by-content :v) ("" -> ()) (_ -> true)) :strs
 }
 
+get-binary = fn :name -> !match :name ^[
+    type:String :s -> env:path-search :s
+    type:Path :p -> :p
+]
+
+# TODO divorce the linking/native/binutils stuff from c/c++, separate c and c++ into separate
+# libraries
+
 ## Create a toolchain from the given configuration.
 ## 
 ## The single argument should be a map, optionally specifying the following keys:
 ## * `compiler` - The compiler to use (as a binary name or path)
+## * `c-compiler` - The C compiler to use (as a binary name or path)
 ## * `archiver` - The archiver to use (as a binary name or path)
 ## * `compile-flags` - Flags to always pass to `compiler` when compiling source code.
+## * `c-compile-flags` - Flags to always pass to `c-compiler` when compiling C source code.
 ## * `link-flags` - Flags to always pass to `compiler` when linking compiled code.
 toolchain = fn :config -> {
-    compiler = match (unless-map :config compiler c++) ^[
-        type:String :s -> env:path-search :s
-        type:Path :p -> :p
-    ]
-    archiver = match (unless-map :config archiver ar) ^[
-        type:String :s -> env:path-search :s
-        type:Path :p -> :p
-    ]
+    compiler = get-binary <| unless-map :config compiler c++
+    c-compiler = get-binary <| unless-map :config c-compiler cc
+    archiver = get-binary <| unless-map :config archiver ar
     compile-flags = unless-map :config compile-flags []
+    c-compile-flags = unless-map :config c-compile-flags []
     link-flags = unless-map :config link-flags []
 
     detect = fn :filename -> {
@@ -70,8 +76,10 @@ toolchain = fn :config -> {
 
     {
         compiler
+        c-compiler
         archiver
         compile-flags
+        c-compile-flags
         link-flags
         target = {
             architecture = detect arch.h
@@ -127,8 +135,10 @@ toolchain = fn :config -> {
 ## If `AR` is not set, `ar` is used.
 env-toolchain = fn: -> toolchain {
     compiler = env_or CXX c++
+    c-compiler = env_or CC cc
     archiver = env_or AR ar
     compile-flags = parse-env-flags CXXFLAGS
+    c-compile-flags = parse-env-flags CFLAGS
     link-flags = parse-env-flags LDFLAGS
 }
 
