@@ -1,9 +1,15 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.6.5  -- 2021-02-11
 * Correctly track headers in `header-dirs` output for each module.
   * Previously there was a bug where, if a header was changed, it did not
     consider it different and did not generate a new header directory.
+* Add `c-compiler` and `c-compile-flags` to the toolchain in support of building
+  external libraries.
+* Add `exact-name` to be able to indicate that a target's conventions shouldn't
+  be applied to the name of a file.
+  * This is more for nice bookkeeping, since you can still always rename the
+    file when copying it.
 
 ## 0.6.4  -- 2021-02-04
 * Allow `compiler` and `archiver` to be specified as paths to binaries

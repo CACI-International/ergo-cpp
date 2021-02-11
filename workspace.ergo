@@ -295,6 +295,15 @@ propagate-flags = fn ^{^:kwargs} :context -> {
     }
 }
 
+## Flag a string as being an exact name, so that no target-specific rules are applied.
+exact-name = {
+    key = "ergo-cpp:exact-name"
+    :arg -> !match :arg ^[
+        fn :name -> value:meta:set :name :key true
+        pat :out -> :name -> if (true = value:meta:get :name :key) { !:out = :name } (!error:throw "not an exact-name")
+    ]
+}
+
 ## Link a module.
 link = fn :name (Module :mod) :additional-flags :type :include-headers -> {
     Module (fn :context -> {
@@ -323,19 +332,29 @@ link = fn :name (Module :mod) :additional-flags :type :include-headers -> {
     })
 }
 
+rename = fn :context :f :name -> !match :name ^[
+    exact-name :name -> :name
+    :name -> context:toolchain:target::f :name
+]
+
 ## Create an executable module from a module.
 exe = fn {name,module,^:kwargs} -> {
     Module (fn :context -> {
         context = propagate-flags ^:kwargs :context
-        Module :mod = link (context:toolchain:target:exe-name :name) :module [] executable ()
+        Module :mod = link (rename :context exe-name :name) :module [] executable ()
         ret = mod :context
         {
             ^:ret
             exec = fn ^:args ^{^:kwargs} -> {
+                {runtime-uses,^:kwargs} = {
+                    runtime-uses = []
+                    ^:kwargs
+                }
+                runtime = !collection:fold (fn :a :u -> [^:a, ^u:runtime]) ret:runtime :runtime-uses
                 libpath = value:cache <| seq ^[
                     libpath = (path:new)
                     fs:create-dir :libpath
-                    collection:map (fn :f -> fs:copy :f :libpath) <| value:by-content ret:runtime
+                    !collection:map (fn :f -> fs:copy :f :libpath) :runtime
                     :libpath
                 ]
                 exec ^{ env = {}, ^:kwargs, env = { ^:env, ^(context:toolchain:target:lib-path-env :libpath) } } ret:file ^:args
@@ -352,7 +371,7 @@ dynamic-library = fn {name,module,^:kwargs} -> {
         compile-flags = fn :e -> [^compile-flags :e,-fPIC]
     }
     Module (fn :context -> {
-        Module :mod = link (context:toolchain:target:dynamic-library-name :name) :module [-shared] "dynamic library" true
+        Module :mod = link (rename :context dynamic-library-name :name) :module [-shared] "dynamic library" true
         mod <| propagate-flags ^:kwargs :context
     })
 }
@@ -362,7 +381,7 @@ static-library = fn {name,module=Module :mod,^:kwargs} -> {
     Module (fn :context -> {
         out = path:new:
         fs:create-dir :out
-        filename = context:toolchain:target:static-library-name :name
+        filename = rename :context static-library-name :name
         out = path:join :out :filename
         mod = mod <| propagate-flags ^:kwargs :context
         run (string:format "creating static library {}" :filename) context:toolchain:archiver -crs :out ^mod:impl
@@ -393,4 +412,5 @@ get-output = fn {project-root,^:config} (Module :mod) -> {
     env-toolchain
     all-files
     header-paths
+    exact-name
 }
