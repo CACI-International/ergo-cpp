@@ -69,7 +69,7 @@ toolchain = fn :config -> {
     detect-c++-abi = fn :testfile -> {
         result = {
             output-path = path:new:
-            result = exec (env = {PATH = env:get PATH}) :compiler ^:compile-flags -o :output_path (path:join :script-dir detection :testfile)
+            result = exec (env = {PATH = env:get PATH}) :compiler ^:compile-flags -o :output-path (path:join :script-dir detection :testfile)
             if result:exit-status (exec :output-path):exit-status
         }
         value:by-content <| value:cache (if :result c++11 c++03)
@@ -400,7 +400,7 @@ static-library = fn {name,module=Module :mod,^:kwargs} -> {
 ## All additional values in the configuration map will be passed (as a map) to
 ## `compile-flags` and `link-flags` functions, if specified.
 get-output = fn {project-root,^:config} (Module :mod) -> {
-    toolchain = unless-map :config toolchain <| toolchain {}
+    toolchain = if (collection:has :config toolchain) config:toolchain (toolchain {})
     extra = {^:config, toolchain=() }
     mod {project-root, toolchain, extra}
 }
