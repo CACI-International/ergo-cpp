@@ -88,7 +88,7 @@ toolchain = fn :config -> {
             # The bug has been fixed, and the next release will allow these to be doc comments again.
 
             # Get the environment variables that should be set to add a path to the library lookup path.
-            lib-path-env = match :os ^[
+            lib-path-env = !match :os ^[
                 macos -> fn :path -> value:by-content { DYLD_LIBRARY_PATH = :path }
                 ios   -> fn :path -> value:by-content { DYLD_LIBRARY_PATH = :path }
                 linux -> fn :path -> value:by-content { LD_LIBRARY_PATH = :path }
@@ -96,13 +96,13 @@ toolchain = fn :config -> {
             ]
 
             # Get the filename for a static library with the given name.
-            static-library-name = match :os ^[
+            static-library-name = !match :os ^[
                 windows -> fn :name -> string:format "{}.lib" :name
                 _       -> fn :name -> string:format "{}.a" :name
             ]
 
             # Get the filename for a dynamic library with the given name.
-            dynamic-library-name = match :os ^[
+            dynamic-library-name = !match :os ^[
                 windows -> fn :name -> string:format "{}.dll" :name
                 linux   -> fn :name -> string:format "lib{}.so" :name
                 macos   -> fn :name -> string:format "lib{}.dylib" :name
@@ -111,7 +111,7 @@ toolchain = fn :config -> {
             ]
 
             # Get the filename for an executable with the given name.
-            exe-name = match :os ^[
+            exe-name = !match :os ^[
                 windows -> fn :name -> string:format "{}.exe" :name
                 _       -> fn :name -> :name
             ]
@@ -294,7 +294,7 @@ exact-name = {
     key = "ergo-cpp:exact-name"
     :arg -> !match :arg ^[
         fn :name -> value:meta:set :name :key true
-        pat :out -> :name -> if (true = value:meta:get :name :key) { !:out = :name } (!error:throw "not an exact-name")
+        pat :out -> :name -> if (!true = value:meta:get :name :key) { !:out = :name } (!error:throw "not an exact-name")
     ]
 }
 
