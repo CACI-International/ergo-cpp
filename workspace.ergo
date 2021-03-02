@@ -67,14 +67,12 @@ toolchain = fn :config -> {
     }
 
     detect-c++-abi = fn :testfile -> {
-        compiled_output = seq ^[
-            output_path = path:new:
-            exec (env = {PATH = env:get PATH}) :compiler ^:compile-flags -o :output_path (path:join :script-dir detection :testfile)
-            :output_path
-        ]
-        symbols = exec :objdump --syms --demangle :compiled_output
-        grep = exec (stdin = symbols:stdout) (env:path-search grep) " std::__cxx11::"
-        value:by-content <| value:cache (if grep:exit-status c++11 c++03)
+        result = {
+            output-path = path:new:
+            result = exec (env = {PATH = env:get PATH}) :compiler ^:compile-flags -o :output_path (path:join :script-dir detection :testfile)
+            if result:exit-status (exec :output-path):exit-status
+        }
+        value:by-content <| value:cache (if :result c++11 c++03)
     }
 
     {

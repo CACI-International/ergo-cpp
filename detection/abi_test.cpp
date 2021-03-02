@@ -1,9 +1,6 @@
-#include <iostream>
 #include <string>
 
 int main(int argc, char* argv[])
 {
-  std::string test(argv[0]);
-  std::cout << test << std::endl;
-  return 0;
+  return &std::basic_string<char>::data == &std::__cxx11::basic_string<char>::data ? 0 : 1;
 }
