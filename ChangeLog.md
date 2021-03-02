@@ -1,5 +1,11 @@
 # ergo-c++ changelog
 
+## 0.6.6  -- 2021-03-02
+* Add `object-dump` to the toolchain definition.
+* Fix the detection of c++ library and c++ abi.
+  * C++ library wasn't always working (depending on cassert include).
+  * C++ abi was getting false positives, so object-dump is used to be more precise.
+
 ## 0.6.5  -- 2021-02-11
 * Correctly track headers in `header-dirs` output for each module.
   * Previously there was a bug where, if a header was changed, it did not

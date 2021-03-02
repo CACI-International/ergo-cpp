@@ -46,6 +46,7 @@ get-binary = fn :name -> !match :name ^[
 ## * `compile-flags` - Flags to always pass to `compiler` when compiling source code.
 ## * `c-compile-flags` - Flags to always pass to `c-compiler` when compiling C source code.
 ## * `link-flags` - Flags to always pass to `compiler` when linking compiled code.
+## * `object-dump` - The tool to inspect generated object files.
 toolchain = fn :config -> {
     compiler = get-binary <| unless-map :config compiler c++
     c-compiler = get-binary <| unless-map :config c-compiler cc
@@ -53,11 +54,12 @@ toolchain = fn :config -> {
     compile-flags = unless-map :config compile-flags []
     c-compile-flags = unless-map :config c-compile-flags []
     link-flags = unless-map :config link-flags []
+    objdump = unless-map :config object-dump objdump
 
     detect = fn :filename -> {
         result = value:cache {
             file = path:join :script-dir detection :filename
-            output = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -E -P :file |>:stdout
+            output = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -imacros cassert -E -P :file |>:stdout
             string:from :output | string:trim | string:split "\"" |>:1
         }
         !log debug <| string:format "detection file `{}` yielded `{}`" :filename :result
@@ -70,7 +72,8 @@ toolchain = fn :config -> {
             exec (env = {PATH = env:get PATH}) :compiler ^:compile-flags -o :output_path (path:join :script-dir detection :testfile)
             :output_path
         ]
-        grep = exec (env:path-search grep) cxx11 :compiled_output
+        symbols = exec :objdump --syms --demangle :compiled_output
+        grep = exec (stdin = symbols:stdout) (env:path-search grep) " std::__cxx11::"
         value:by-content <| value:cache (if grep:exit-status c++11 c++03)
     }
 
@@ -130,13 +133,16 @@ toolchain = fn :config -> {
 
 ## Get a toolchain based on the environment.
 ## 
-## This toolchain is derived from the environment variables `CXX`, `AR`, `CXXFLAGS`, and `LDFLAGS`. 
+## This toolchain is derived from the environment variables `CXX`, `CC`, `AR`, `CXXFLAGS`, `CFLAGS`, `LDFLAGS`, and `OBJDUMP`.
 ## If `CXX` is not set, `c++` is used.
+## If `CC` is not set, `cc` is used.
 ## If `AR` is not set, `ar` is used.
+## If `OBJDUMP` is not set, `objdump` is used.
 env-toolchain = fn: -> toolchain {
     compiler = env_or CXX c++
     c-compiler = env_or CC cc
     archiver = env_or AR ar
+    object-dump = env_or OBJDUMP objdump
     compile-flags = parse-env-flags CXXFLAGS
     c-compile-flags = parse-env-flags CFLAGS
     link-flags = parse-env-flags LDFLAGS
