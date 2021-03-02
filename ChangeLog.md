@@ -4,7 +4,9 @@
 * Add `object-dump` to the toolchain definition.
 * Fix the detection of c++ library and c++ abi.
   * C++ library wasn't always working (depending on cassert include).
-  * C++ abi was getting false positives, so the detection file has been improved.
+  * C++ abi was getting false positives, so the detection file has been
+    improved to only use the c preprocessor (which we didn't realize was
+    possible before).
 
 ## 0.6.5  -- 2021-02-11
 * Correctly track headers in `header-dirs` output for each module.
