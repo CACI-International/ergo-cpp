@@ -1,18 +1,17 @@
-^ergo std
+std:import {fs, match, script, seq, Iter, Path} = std:
 
 c++ = ergo ..
 project-root = script:dir:
-prelude = {c++}
 build = fn :toolchain :p -> {
     # Load requested output
-    output = ergo <| path:join :project-root :p
+    output = ergo <| Path:join :project-root :p
     c++:get-output {project-root, toolchain} :output
 }
 dist = fn :result -> seq ^[
-    out = path:join :project-root dist
+    out = Path:join :project-root dist
     fs:create-dir :out
     fs:copy result:file :out
-    collection:map (fn :f -> fs:copy :f :out) result:runtime
+    Iter:map (fn :f -> fs:copy :f :out) result:runtime
     ()
 ]
 
@@ -28,10 +27,12 @@ release-toolchain = c++:toolchain {
 
 debug = fn :p -> dist <| build :debug-toolchain :p
 release = fn :p -> dist <| build :release-toolchain :p
-run = fn :p -> build :debug-toolchain :p |>:exec arg
+run = fn :p -> (build :debug-toolchain :p):exec:
 
-command = fn :cmd ^:args -> match :cmd ^[
-    debug -> debug ^:args
-    release -> release ^:args
-    run -> run ^:args
+command = match:value ^[
+    fn debug :p -> debug :p
+    fn release :p -> release :p
+    fn run :p -> run :p
 ]
+
+{command, c++}

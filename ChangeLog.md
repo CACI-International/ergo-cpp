@@ -1,5 +1,10 @@
 # ergo-c++ changelog
 
+## 0.7.0  -- TBD
+* Update to ergo beta.9.
+* Improve type checking and performance using new ergo standard library
+  functions.
+
 ## 0.6.6  -- 2021-03-02
 * Add `object-dump` to the toolchain definition.
 * Fix the detection of c++ library and c++ abi.

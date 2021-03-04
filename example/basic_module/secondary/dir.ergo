@@ -1,3 +1,5 @@
+std:import {c++} = workspace:
+
 c++:module {
     files = c++:all-files:
     headers = c++:header-paths all
