@@ -1,6 +1,6 @@
 # ergo-c++ changelog
 
-## 0.7.0  -- TBD
+## 0.7.0  -- 2021-03-09
 * Update to ergo beta.9.
 * Improve type checking and performance using new ergo standard library
   functions.
