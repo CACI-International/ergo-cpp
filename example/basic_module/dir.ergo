@@ -5,5 +5,8 @@ c++:module {
     headers = c++:header-paths {
         addition = all
     }
-    uses = [ergo secondary]
+    uses = {
+        export = [ergo add3]
+        private = [ergo add1]
+    }
 }

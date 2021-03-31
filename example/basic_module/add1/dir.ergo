@@ -1,0 +1,4 @@
+workspace:c++:module {
+    files = [add1.cpp]
+    headers = { :(std:Path:join add1.h) = add1.h }
+}

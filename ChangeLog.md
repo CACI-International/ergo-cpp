@@ -4,6 +4,12 @@
 * Improve `exe:exec` behavior by preloading libraries when possible, rather than
   specifying a library load path. This avoids issues with SONAME file lookup.
 
+### Breaking Changes
+* Allow uses to be distinguished as public/private/export. This is a breaking
+  change because now a `uses` that's just an array will be interpreted as
+  private visibility, whereas in the past it behaved as if it were public
+  visibility.
+
 ## 0.7.0  -- 2021-03-09
 * Update to ergo beta.9.
 * Improve type checking and performance using new ergo standard library

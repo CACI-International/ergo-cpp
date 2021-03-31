@@ -247,6 +247,37 @@ header-paths = {
 ## Convert a path to an include string.
 path-to-include = fn :p -> by-content <| String:join "/" <| Path:split :p
 
+modules = Array:Of :Module
+match-uses = pat :tgt -> match:value ^[
+    { private = default (modules :private) as []
+      public = default (modules :public) as []
+      export = default (modules :export) as []
+    } -> {
+        !:tgt = { private, public, export }
+    }
+
+    default (modules :uses) as [] -> { !:tgt = { private = :uses, public = [], export = [] } }
+]
+
+vis = {
+    map = fn (Function :f) :v -> {
+        private = f v:private
+        public = f v:public
+        export = f v:export
+    }
+    internal = fn :v -> Iter:flatten [v:public, v:private]
+    external = fn :v -> Iter:flatten [v:public, v:export]
+    all = fn :v -> Iter:flatten [v:public, v:private, v:export]
+    eval = fn :v -> {
+        internal = internal :v
+        external = external :v
+    }
+    map* = fn (Function :f) :v -> {
+        internal = f v:internal
+        external = f v:external
+    }
+}
+
 ## Create a module with the given configuration.
 ##
 ## Arguments: `(Map :config)`
@@ -255,7 +286,12 @@ path-to-include = fn :p -> by-content <| String:join "/" <| Path:split :p
 ## * `files`: an array of the files to compile
 ## * `headers`: a map with the headers to expose, where the key is the `#include` Path and the value
 ##   is the header file Path.
-## * `uses`: the modules to use with this module
+## * `uses`: the modules to use with this module, either an array (with private visibility) or a map
+## with the following optional keys:
+##   * `public`: an array of modules which will be used when compiling files in this module
+##   and will be visible to consumers of this module.
+##   * `private`: an array of modules which will be used when compiling files in this module.
+##   * `export`: an array of modules which will be visible to consumers of this module.
 ## * `compile-flags`: additional compilation flags to use when compiling files in this module
 ##   This should be a function which is passed the extra context and returns an array of flags.
 ## 
@@ -272,7 +308,7 @@ path-to-include = fn :p -> by-content <| String:join "/" <| Path:split :p
 module = fn ^{ relative-dir } {
     files = default (Array :files) as []
     headers = default (Map :headers) as {}
-    uses = default (Array:Of :Module |> :uses) as []
+    uses = match-uses :uses
     compile-flags = default (Function :compile-flags) as (fn _ -> [])
 } -> {
     dir = default :relative-dir as script:dir:
@@ -281,34 +317,36 @@ module = fn ^{ relative-dir } {
     headers = Iter:map (fn (MapEntry: :to :from) -> MapEntry: :to (Path:join :dir :from)) :headers
 
     Module: <| fn :context -> {
-        uses = Iter:map-all (fn (Module: :u) -> u :context) :uses
-        header-dirs = :uses | Iter:map (fn :m -> m:header-dirs) | Iter:flatten | Iter:unique
+        uses = vis:map (Function:partial Iter:map-all (fn (Module: :u) -> u :context)) :uses
+        header-dirs = vis:map (fn :uses -> (:uses | Iter:map (fn :m -> m:header-dirs) | Iter:flatten | Iter:unique)) :uses
         header-dir = cache <| Path:with-output <| fn :dir -> seq ^[
             fs:create-dir :dir # Ensure path exists if empty
             # Force the array so the inner values are the results of `fs:copy`, which will include
             # the `fs:track` identities (so if a header changes, the header-dir is rebuilt).
             !Array:from <| Iter:map-all (fn (MapEntry: :to :from) -> fs:copy (fs:track :from) (Path:join :dir :to)) :headers
         ]
-        header-dirs = Array:from <| Iter:flatten [[:header-dir], :header-dirs]
-        includes = to-includes :header-dirs
+        header-dirs = vis:eval <| vis:map (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) :header-dirs
+        includes = to-includes header-dirs:internal
         compile-flags = compile-flags context:extra
 
         # Create map from header path to dependency
-        uses-header-deps = !(:uses | Iter:map (fn :m -> m:header-deps) | Iter:filter (fn :a -> :a) | Iter:flatten | Map:from)
-        mod-header-deps = Iter:map-all (fn (MapEntry: :to :from) -> MapEntry: (path-to-include :to) (set-file-deps context:toolchain :from [-I,:header-dir] :compile-flags :uses-header-deps)) :headers
-        header-deps = !Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]
+        uses-header-deps = vis:map* (fn :uses -> !(:uses | Iter:map (fn :m -> m:header-deps) | Iter:filter (fn :a -> :a) | Iter:flatten | Map:from)) <| vis:eval :uses
+        mod-header-deps = Iter:map-all (fn (MapEntry: :to :from) -> MapEntry: (path-to-include :to) (set-file-deps context:toolchain :from [-I,:header-dir] :compile-flags uses-header-deps:internal)) :headers
+        header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) :uses-header-deps
 
-        objects = Iter:map-all (fn :f -> compile context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags :header-deps) :includes ^:compile-flags) :files
+        objects = Iter:map-all (fn :f -> compile context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags) :files
+
+        all-uses = vis:all :uses
 
         impl = Array:from <| Iter:unique <| Iter:flatten [
-            Iter:map (fn :m -> m:impl) :uses | Iter:flatten
+            Iter:map (fn :m -> m:impl) :all-uses | Iter:flatten
             :objects
         ]
         runtime = Array:from <| Iter:unique <| Iter:flatten <| Iter:flatten [
-            Iter:map (fn :m -> m:runtime) :uses
-            Iter:map (fn :m -> m:runtime-if-used) :uses | Iter:filter (fn :a -> :a)
+            Iter:map (fn :m -> m:runtime) :all-uses
+            Iter:map (fn :m -> m:runtime-if-used) :all-uses | Iter:filter (fn :a -> :a)
         ]
-        { impl, header-dirs, header-deps, runtime }
+        { impl, header-dirs = header-dirs:external, header-deps = header-deps:external, runtime }
     }
 }
 
