@@ -35,6 +35,32 @@ parse-env-flags = fn :var -> {
 ## * `compile-flags` - Flags to always pass to `compiler` when compiling source code.
 ## * `c-compile-flags` - Flags to always pass to `c-compiler` when compiling C source code.
 ## * `link-flags` - Flags to always pass to `compiler` when linking compiled code.
+##
+## The returned toolchain is a map with the following keys:
+## * `compiler` - The resolved C++ compiler
+## * `c-compiler` - The resolved C compiler
+## * `archiver` - The resolved archiver program
+## * `object-dump` - The resolved object-dump program
+## * `compile-flags` - The compile flags to use with the C++ compiler
+## * `c-compile-flags` - The compile flags to use with the C compiler
+## * `link-flags` - The link flags to use when linking
+## * `target` - A map containing the following target-specific keys:
+##   * `architecture` - The toolchain target architecture (`arm`, `aarch64`, `i386`, `x86_64`,
+##   `unknown`)
+##   * `os` - The toolchain target operating system (`windows`, `linux`, `ios-simulator`, `ios`,
+##   `macos`, `unknown`)
+##   * `compiler` - The type of the toolchain compiler (`clang`, `gcc`, `msvc`, `unknown`)
+##   * `c++lib` - The type of the toolchain's C++ library (`libstdc++`, `libc++`, `msvc`, `unknown`)
+##   * `c++abi` - The target ABI of the toolchain (`c++11`, `c++03`)
+##   * `lib-path-env` - A function that returns the env to set to add a Path to the library search
+##   path.
+##   * `preload-libraries` - A function that returns the env to set to add a list of library Paths
+##   to the preloaded libraries.
+##   * `static-library-name` - A function that returns the filesystem name for a particular static
+##   library name.
+##   * `dynamic-library-name` - A function that returns the filesystem name for a particular dynamic
+##   library name.
+##   * `exe-name` - A function that returns the filesystem name for a particular executable name.
 toolchain = fn {
     compiler = default :compiler as c++
     c-compiler = default :c-compiler as cc
