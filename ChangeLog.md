@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## TBD
+* Improve `exe:exec` behavior by preloading libraries when possible, rather than
+  specifying a library load path. This avoids issues with SONAME file lookup.
+
 ## 0.7.0  -- 2021-03-09
 * Update to ergo beta.9.
 * Improve type checking and performance using new ergo standard library
