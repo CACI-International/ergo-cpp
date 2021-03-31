@@ -218,7 +218,7 @@ Module = type:new (bind = _ -> _ -> !error:throw "cannot directly access Module"
 
 ## Return a file path that depends on all include dependencies, given a map of header paths to dependencies
 ## that will be used for includes that do not resolve to a file.
-set-file-deps = fn :toolchain :file :untracked-compile-flags :compile-flags :known-headers -> {
+set-file-deps = fn ^{ banned-headers } :toolchain :file :untracked-compile-flags :compile-flags :known-headers -> {
     deps = String:from (exec (env = { PATH = env:get PATH }) toolchain:compiler ^toolchain:compile-flags -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-compile-flags ^:compile-flags :file):stdout | String:trim
     # String:regex
     parts = Array <| match (String:split ":" :deps) ([_,^:parts] -> :parts)
@@ -231,7 +231,18 @@ set-file-deps = fn :toolchain :file :untracked-compile-flags :compile-flags :kno
     # Cache based on the file, compiler, and compile flags
     parts = cache <| variable (depends = [file-deps, fs:track :file, toolchain:compiler, toolchain:compile-flags, :compile-flags]) :parts
     # existing files depend on the result of fs:track, otherwise look in known-headers
-    depends = !Iter:map (fn :dep -> !if (fs:exists <| Path:join :dep) (fs:track :dep) (default known-headers:(!:dep) as ())) :parts
+    depends = !Iter:map (fn :dep -> {
+        !if (fs:exists <| Path:join :dep) (fs:track :dep) {
+            !match known-headers:(!:dep) ^[
+                Unset _ -> !if :banned-headers {
+                    !if banned-headers:(!:dep) {
+                        !error:throw <| String:format "private include ({}) used in public header {}" :dep :file
+                    }
+                }
+                Function:pass
+            ]
+        }
+    }) :parts
     variable ^{ depends } :file
 }
 
@@ -360,7 +371,10 @@ module = fn ^{ relative-dir } {
 
         # Create map from header path to dependency
         uses-header-deps = vis:map* (fn :uses -> !(:uses | Iter:map (fn :m -> m:header-deps) | Iter:filter (fn :a -> :a) | Iter:flatten | Map:from)) <| vis:eval :uses
-        mod-header-deps = Iter:map-all (fn (MapEntry: :to :from) -> MapEntry: (path-to-include :to) (set-file-deps context:toolchain :from [-I,:header-dir] :compile-flags uses-header-deps:internal)) :headers
+        # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
+        mod-header-deps = Iter:map-all (fn (MapEntry: :to :from) -> {
+            MapEntry: (path-to-include :to) <| set-file-deps (banned-headers = uses-header-deps:internal) context:toolchain :from [-I,:header-dir] :compile-flags uses-header-deps:external
+        }) :headers
         header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) :uses-header-deps
 
         compiles = Iter:map-all (fn :f -> compile (file-content-cache = context:options:file-content-cache) context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags) :files

@@ -1,18 +1,18 @@
 # ergo-c++ changelog
 
-## TBD
+## 0.8.0  -- 2021-03-31
 * Improve `exe:exec` behavior by preloading libraries when possible, rather than
   specifying a library load path. This avoids issues with SONAME file lookup.
 * Add `compile-commands` to write a `compile_commands.json` file from outputs.
 * Change caching to (by default) only depend on compile flags. Add the `options`
   map to `get-outputs` configuration, which has a `file-content-cache` key which
   may be specified to cache based on file content as well (as it used to).
+* Allow `uses` to be distinguished as public/private/export.
+  * If a private include is exposed in a public header, an error will occur.
 
 ### Breaking Changes
-* Allow uses to be distinguished as public/private/export. This is a breaking
-  change because now a `uses` that's just an array will be interpreted as
-  private visibility, whereas in the past it behaved as if it were public
-  visibility.
+* A `uses` that's just an array will be interpreted as private visibility,
+  whereas in the past it behaved as if it were public visibility.
 
 ## 0.7.0  -- 2021-03-09
 * Update to ergo beta.9.
