@@ -165,12 +165,32 @@ env-toolchain = fn: -> toolchain {
     link-flags = parse-env-flags LDFLAGS
 }
 
+cached-path = fn :file-content-cache :path :depends -> {
+    if :file-content-cache [:path,:cache] {
+        # We want the path to be explicitly cached on the deps.
+        out = cache <| variable ^{ depends } :path
+        get-value = fn :v -> {
+            last-writer-file = cache <| variable (depends = [last-writer, :out]) Path:new:
+            me = by-content <| String:from <| cache <| variable (depends = :v) Path:new:
+            last-writer = by-content <| String:from (!if (fs:exists :last-writer-file) (fs:read :last-writer-file) "")
+            # Shortcut and return `out` if the last writer was this value.
+            # The returned value should have the same identity as `v`
+            variable (depends = :v) <| if (!:me = :last-writer) :out (seq (fs:write :last-writer-file :me) :v)
+        }
+        [:out,:get-value]
+    }
+}
+
 ## Compile a file with the given flags.
 ## The project-root argument is used to ensure the file paths in compiled debug sections are user-friendly.
-compile = fn :toolchain :project-root :file :untracked-flags ^:flags -> {
-    out = Path:join Path:new: (String:format "{}.o" <| Path:relative :project-root :file)
+compile = fn ^{ file-content-cache } :toolchain :project-root :file :untracked-flags ^:flags -> {
+    proj-path = !Path:relative :project-root :file
+    out = Path:join Path:new: <| String:format "{}.o" :proj-path
+
+    [:out,:ocache] = cached-path :file-content-cache :out [:proj-path, toolchain:compiler, toolchain:compile-flags, :flags]
+
     {
-        object = cache <| seq ^[
+        object = ocache <| seq ^[
             fs:create-dir <| Path:parent :out
             run (String:format "compiling {}" :file) (env = { PATH = env:get PATH }) toolchain:compiler ^toolchain:compile-flags -c -o :out ^(variable :untracked-flags) ^:flags :file
             :out
@@ -343,7 +363,7 @@ module = fn ^{ relative-dir } {
         mod-header-deps = Iter:map-all (fn (MapEntry: :to :from) -> MapEntry: (path-to-include :to) (set-file-deps context:toolchain :from [-I,:header-dir] :compile-flags uses-header-deps:internal)) :headers
         header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) :uses-header-deps
 
-        compiles = Iter:map-all (fn :f -> compile context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags) :files
+        compiles = Iter:map-all (fn :f -> compile (file-content-cache = context:options:file-content-cache) context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags) :files
         objects = Iter:map-all (fn :c -> c:object) :compiles
         compile-commands = Iter:map-all (fn :c -> c:compile-command) :compiles
 
@@ -385,11 +405,8 @@ exact-name = {
 }
 
 ## Link a module.
-link = fn :name (Module: :mod) :additional-flags :type :include-headers -> {
+link = fn :call-site :name (Module: :mod) :additional-flags :type :include-headers -> {
     Module: <| fn :context -> {
-        out = Path:new:
-        file = Path:join :out :name
-
         mod = mod :context
 
         start-group-flag = !match context:toolchain:target:os ^[
@@ -400,13 +417,21 @@ link = fn :name (Module: :mod) :additional-flags :type :include-headers -> {
         end-group-flag = !match context:toolchain:target:os ^[
             linux -> ["-Wl,--end-group"]
             _     -> []
+
         ]
 
-        file = cache <| seq ^[
-            fs:create-dir :out
+        call-site = call-site :context
+
+        file = Path:join Path:new: :call-site :name
+
+        [:file,:fcache] = cached-path context:options:file-content-cache :file [:call-site, :name, context:toolchain:compiler, context:toolchain:link-flags, :additional-flags]
+
+        file = fcache <| seq ^[
+            fs:create-dir <| Path:parent :file
             run (String:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler ^context:toolchain:link-flags ^:additional-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag
             :file
         ]
+
         {
             file
             impl = [:file,^mod:runtime]
@@ -422,6 +447,11 @@ rename = fn :context :f :name -> !match :name ^[
     exact-name :name -> :name
     :name -> context:toolchain:target::f :name
 ]
+
+call-site = fn: -> {
+    p = !error:catch (fn _ -> script:dir:) (dynamic script:path):
+    fn :context -> !Path:relative context:project-root :p
+}
 
 ## Create an executable module from a module.
 ##
@@ -439,9 +469,10 @@ exe = fn {
     link-flags = optional (Function :link-flags)
 } -> {
     flags = {compile-flags, link-flags}
+    site = call-site:
     Module: <| fn :context -> {
         context = propagate-flags :flags :context
-        Module: :mod = link (rename :context exe-name :name) :module [] executable Bool:false
+        Module: :mod = link :site (rename :context exe-name :name) :module [] executable Bool:false
         ret = mod :context
         {
             ^:ret
@@ -485,9 +516,10 @@ dynamic-library = fn {
         compile-flags = fn :e -> [^compile-flags :e,-fPIC]
         link-flags
     }
+    site = call-site:
     Module: <| fn :context -> {
         context = propagate-flags :flags :context
-        Module: :mod = link (rename :context dynamic-library-name :name) :module [-shared] "dynamic library" Bool:true
+        Module: :mod = link :site (rename :context dynamic-library-name :name) :module [-shared] "dynamic library" Bool:true
         mod :context
     }
 }
@@ -508,14 +540,18 @@ static-library = fn {
     link-flags = optional (Function :link-flags)
 } -> {
     flags = {compile-flags,link-flags}
+    site = call-site:
     Module: <| fn :context -> {
-        dir = Path:new:
-        filename = rename :context static-library-name :name
-        file = Path:join :dir :filename
         mod = mod <| propagate-flags :flags :context
 
-        file = cache <| seq ^[
-            fs:create-dir :dir
+        site = site :context
+        filename = rename :context static-library-name :name
+        file = Path:join Path:new: :site :filename
+
+        [:file,:fcache] = cached-path context:options:file-content-cache :file [:site, :filename, context:toolchain:archiver]
+
+        file = fcache <| seq ^[
+            fs:create-dir <| Path:parent :file
             run (String:format "creating static library {}" :filename) context:toolchain:archiver -crs :file ^mod:impl
             :file
         ]
@@ -539,16 +575,26 @@ static-library = fn {
 ##   compiled must exist. This is used so debug info can contain the relative directories of the
 ##   files.
 ## * `toolchain` - the toolchain to use, using the default toolchain if unspecified.
+## * `options` - a map of options affecting behavior, including:
+##   * `file-content-cache` - if present, outputs will be cached based on file content in addition
+##     to the compile flags. For example, if you compile, change a file, compile again, and then
+##     revert the change, no recompilation will occur because there will already be a compiled
+##     output in the cache. This is most useful if switching between branches/commits often.
+##
+## Note that if `file-content-cache` is not specified, `exe`/`dynamic-library`/`static-library`
+## outputs _must_ have unique names on a per-script basis. This is because the caching relies on the
+## script path and name when determining the cache target file.
 ## 
 ## All additional values in the configuration map will be passed (as a map) to `compile-flags` and
 ## `link-flags` functions in other functions, if specified.
 get-output = fn {
     project-root = Path :project-root
     toolchain = optional (Map :tc)
+    options = default (Map :options) as {}
     ^:extra
 } (Module: :mod) -> {
     toolchain = !if :tc :tc (toolchain {})
-    mod {project-root, toolchain, extra}
+    mod {project-root, toolchain, options, extra}
 }
 
 string-escape = fn :s -> {

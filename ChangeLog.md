@@ -4,6 +4,9 @@
 * Improve `exe:exec` behavior by preloading libraries when possible, rather than
   specifying a library load path. This avoids issues with SONAME file lookup.
 * Add `compile-commands` to write a `compile_commands.json` file from outputs.
+* Change caching to (by default) only depend on compile flags. Add the `options`
+  map to `get-outputs` configuration, which has a `file-content-cache` key which
+  may be specified to cache based on file content as well (as it used to).
 
 ### Breaking Changes
 * Allow uses to be distinguished as public/private/export. This is a breaking
