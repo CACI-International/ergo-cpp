@@ -3,6 +3,7 @@
 ## TBD
 * Improve `exe:exec` behavior by preloading libraries when possible, rather than
   specifying a library load path. This avoids issues with SONAME file lookup.
+* Add `compile-commands` to write a `compile_commands.json` file from outputs.
 
 ### Breaking Changes
 * Allow uses to be distinguished as public/private/export. This is a breaking

@@ -29,10 +29,14 @@ debug = fn :p -> dist <| build :debug-toolchain :p
 release = fn :p -> dist <| build :release-toolchain :p
 run = fn :p -> (build :debug-toolchain :p):exec:
 
+write-commands = fn :result -> fs:copy (c++:compile-commands :result) :project-root
+
 command = match:value ^[
     fn debug :p -> debug :p
     fn release :p -> release :p
     fn run :p -> run :p
+    fn compile-commands debug :p -> write-commands <| build :debug-toolchain :p
+    fn compile-commands release :p -> write-commands <| build :release-toolchain :p
 ]
 
 {command, c++}
