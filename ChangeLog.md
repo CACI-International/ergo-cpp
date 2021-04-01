@@ -15,6 +15,7 @@
 ### Breaking Changes
 * A `uses` that's just an array will be interpreted as private visibility,
   whereas in the past it behaved as if it were public visibility.
+* `exe:exec` no longer works; `exec-output` should be used instead.
 
 ## 0.7.0  -- 2021-03-09
 * Update to ergo beta.9.
