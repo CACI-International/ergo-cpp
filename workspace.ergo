@@ -318,6 +318,48 @@ vis = {
     }
 }
 
+## Evaluate uses with a context.
+##
+## Arguments: `:context :uses`
+##
+## `context` should be the module context.
+## `uses` should be the output of a `match-uses` binding, specifically a map of
+## private/public/export uses modules.
+##
+## Returns a map with:
+## * `uses` - all uses outputs
+## * `header-dirs` - a map of internal/external header-dirs
+## * `header-deps` - a map of internal/external header-deps
+eval-uses = fn :context :uses -> {
+    uses = vis:map (Function:partial Iter:map-all (fn (Module: :u) -> u :context)) :uses
+    int-ext = vis:eval :uses
+    uses-header-dirs = vis:map* (fn :uses -> (:uses | Iter:map (fn :m -> m:header-dirs) | Iter:flatten | Iter:unique)) :int-ext
+    uses-header-deps = vis:map* (fn :uses -> !(:uses | Iter:map (fn :m -> m:header-deps) | Iter:filter (fn :a -> :a) | Iter:flatten | Map:from)) :int-ext
+    {
+        uses = vis:all :uses, 
+        header-dirs = :uses-header-dirs
+        header-deps = :uses-header-deps
+    }
+}
+
+module-result = fn :all-uses { impl, runtime, compile-commands, header-dirs, header-deps, ^:rest } -> {
+    impl = Array:from <| Iter:unique <| Iter:flatten [
+        Iter:map (fn :m -> m:impl) :all-uses | Iter:flatten
+        :impl
+    ]
+    runtime = Array:from <| Iter:unique <| Iter:flatten <| Iter:flatten [
+        Iter:map (fn :m -> m:runtime) :all-uses
+        Iter:map (fn :m -> m:runtime-if-used) :all-uses | Iter:filter (fn :a -> :a)
+        :runtime
+    ]
+    compile-commands = Array:from <| Iter:unique <| Iter:flatten [
+        Iter:flatten (:all-uses | Iter:map (fn :u -> u:compile-commands) | Iter:filter (fn :a -> :a))
+        :compile-commands
+    ]
+
+    { impl, header-dirs = header-dirs:external, header-deps = header-deps:external, runtime, compile-commands, ^:rest }
+}
+
 ## Create a module with the given configuration.
 ##
 ## Arguments: `(Map :config)`
@@ -327,9 +369,9 @@ vis = {
 ## * `headers`: a map with the headers to expose, where the key is the `#include` Path and the value
 ##   is the header file Path.
 ## * `uses`: the modules to use with this module, either an array (with private visibility) or a map
-## with the following optional keys:
+##   with the following optional keys:
 ##   * `public`: an array of modules which will be used when compiling files in this module
-##   and will be visible to consumers of this module.
+##     and will be visible to consumers of this module.
 ##   * `private`: an array of modules which will be used when compiling files in this module.
 ##   * `export`: an array of modules which will be visible to consumers of this module.
 ## * `compile-flags`: additional compilation flags to use when compiling files in this module
@@ -345,6 +387,7 @@ vis = {
 ##   (where the file value also incorporates all header dependencies when deriving
 ##   its identity)
 ## * `runtime`: an array of any additional requirements of the module (inherited from used modules)
+## * `compile-commands`: an array of compile commands to build the module and all dependent modules
 module = fn ^{ relative-dir } {
     files = default (Array :files) as []
     headers = default (Map :headers) as {}
@@ -357,42 +400,85 @@ module = fn ^{ relative-dir } {
     headers = Iter:map (fn (MapEntry: :to :from) -> MapEntry: :to (Path:join :dir :from)) :headers
 
     Module: <| fn :context -> {
-        uses = vis:map (Function:partial Iter:map-all (fn (Module: :u) -> u :context)) :uses
-        header-dirs = vis:map (fn :uses -> (:uses | Iter:map (fn :m -> m:header-dirs) | Iter:flatten | Iter:unique)) :uses
+        evaled = eval-uses :context :uses
+
         header-dir = cache <| Path:with-output <| fn :dir -> seq ^[
             fs:create-dir :dir # Ensure path exists if empty
             # Force the array so the inner values are the results of `fs:copy`, which will include
             # the `fs:track` identities (so if a header changes, the header-dir is rebuilt).
             !Array:from <| Iter:map-all (fn (MapEntry: :to :from) -> fs:copy (fs:track :from) (Path:join :dir :to)) :headers
         ]
-        header-dirs = vis:eval <| vis:map (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) :header-dirs
+
+        header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) evaled:header-dirs
+
         includes = to-includes header-dirs:internal
         compile-flags = compile-flags context:extra
 
-        # Create map from header path to dependency
-        uses-header-deps = vis:map* (fn :uses -> !(:uses | Iter:map (fn :m -> m:header-deps) | Iter:filter (fn :a -> :a) | Iter:flatten | Map:from)) <| vis:eval :uses
         # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
+        # ban internal header-deps so that if they are used, an error will occur about exposing a private module
         mod-header-deps = Iter:map-all (fn (MapEntry: :to :from) -> {
-            MapEntry: (path-to-include :to) <| set-file-deps (banned-headers = uses-header-deps:internal) context:toolchain :from [-I,:header-dir] :compile-flags uses-header-deps:external
+            MapEntry: (path-to-include :to) (
+                set-file-deps (banned-headers = evaled:header-deps:internal)
+                    context:toolchain :from [-I,:header-dir] :compile-flags evaled:header-deps:external
+                )
         }) :headers
-        header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) :uses-header-deps
+        header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
 
         compiles = Iter:map-all (fn :f -> compile (file-content-cache = context:options:file-content-cache) context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags) :files
         objects = Iter:map-all (fn :c -> c:object) :compiles
         compile-commands = Iter:map-all (fn :c -> c:compile-command) :compiles
 
-        all-uses = vis:all :uses
+        module-result evaled:uses { impl = :objects, runtime = [], compile-commands, header-dirs, header-deps }
+    }
+}
 
-        impl = Array:from <| Iter:unique <| Iter:flatten [
-            Iter:map (fn :m -> m:impl) :all-uses | Iter:flatten
-            :objects
-        ]
-        runtime = Array:from <| Iter:unique <| Iter:flatten <| Iter:flatten [
-            Iter:map (fn :m -> m:runtime) :all-uses
-            Iter:map (fn :m -> m:runtime-if-used) :all-uses | Iter:filter (fn :a -> :a)
-        ]
-        compile-commands = Array:from <| Iter:unique <| Iter:flatten [:compile-commands, Iter:flatten (:all-uses | Iter:map (fn :u -> u:compile-commands) | Iter:filter (fn :a -> :a))]
-        { impl, header-dirs = header-dirs:external, header-deps = header-deps:external, runtime, compile-commands }
+## Create a module that is already compiled with the given configuration.
+##
+## Arguments: `(Map :config)`
+## 
+## The configuration should be a map with the following optional keys:
+## * `Array :link` - object files/libraries to link
+## * `(Array:Of :Path) :include-dirs` - include directories
+## * `(Array:Of :Path) :runtime` - libraries (typically dynamic) needed at runtime
+## * `(Map :header-deps)` - a map from include path to header file path, which helps in resolving header dependencies
+## * `Array :compile-commands` - an array of compile commands that are used to produce the module,
+##   where items are maps with:
+##   * `Array :arguments` - the arguments in the compile command (including executable)
+##   * `Path :file` - the input file of the command (absolute path)
+##   * `Path :out` - the output file of the command (absolute path)
+## * `uses`: the modules to use with this module, either an array (with private visibility) or a map
+##   with the following optional keys:
+##   * `public`: an array of modules which will be used when compiling files in this module
+##     and will be visible to consumers of this module.
+##   * `private`: an array of modules which will be used when compiling files in this module.
+##   * `export`: an array of modules which will be visible to consumers of this module.
+##
+##  Any additional keys in the config map will be copied in the module result.
+## 
+## The returned value will be a Module, where the output will be a map with the following keys:
+## * `impl`: an array of compiled object files
+## * `header-dirs`: an array of header directories exported by the module (and all directories from used modules)
+## * `header-deps`: a map from header paths to the file to which they resolve
+##   (where the file value also incorporates all header dependencies when deriving
+##   its identity)
+## * `runtime`: an array of any additional requirements of the module (inherited from used modules)
+## * `compile-commands`: an array of compile commands to build the module and all dependent modules
+## * additional keys from the config map
+compiled-module = fn {
+    link = default (Array :link) as []
+    include-dirs = default (Array:Of :Path |> :includes) as []
+    runtime = default (Array:Of :Path |> :runtime) as []
+    header-deps = default (Map :header-deps) as {}
+    compile-commands = default (Array :compile-commands) as []
+    uses = match-uses :uses
+    ^:rest
+} -> {
+    Module: <| fn :context -> {
+        evaled = eval-uses :context :uses
+        header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) evaled:header-dirs
+        header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps,:header-deps]) evaled:header-deps
+
+        module-result evaled:uses { impl = :link, runtime, compile-commands, header-dirs, header-deps, ^:rest }
     }
 }
 
@@ -617,7 +703,7 @@ string-escape = fn :s -> {
     :s
 }
 
-## Create a compile_commands.json file for all compile commands in the output.
+## Create a compile_commands.json file for all compile commands in the outputs.
 ##
 ## Arguments: `^:outputs`
 ##
@@ -649,6 +735,7 @@ compile-commands = fn ^:outputs -> {
 ##
 ## # Functions
 ## {{(doc:functions :self module all-files header-paths
+##    compiled-module
 ##    exe dynamic-library static-library exact-name
 ##    get-output toolchain env-toolchain
 ##    compile-commands)}}
@@ -659,6 +746,7 @@ compile-commands = fn ^:outputs -> {
     ## {{doc:modules :self Module}}
     type = {Module}
     module
+    compiled-module
     exe
     dynamic-library
     static-library
