@@ -231,14 +231,11 @@ set-file-deps = fn ^{ banned-headers } :toolchain :file :untracked-compile-flags
     # Cache based on the file, compiler, and compile flags
     parts = cache <| variable (depends = [file-deps, fs:track :file, toolchain:compiler, toolchain:compile-flags, :compile-flags]) :parts
     # existing files depend on the result of fs:track, otherwise look in known-headers
+    banned-check = !if :banned-headers (fn :x -> !if banned-headers::x { !error:throw <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
     depends = !Iter:map (fn :dep -> {
         !if (fs:exists <| Path:join :dep) (fs:track :dep) {
             !match known-headers:(!:dep) ^[
-                Unset _ -> !if :banned-headers {
-                    !if banned-headers:(!:dep) {
-                        !error:throw <| String:format "private include ({}) used in public header {}" :dep :file
-                    }
-                }
+                Unset _ -> banned-check !:dep
                 Function:pass
             ]
         }
