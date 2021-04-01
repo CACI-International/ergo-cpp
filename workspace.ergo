@@ -344,13 +344,13 @@ module-result = fn :all-uses { impl, runtime, compile-commands, header-dirs, hea
         Iter:map (fn :m -> m:impl) :all-uses | Iter:flatten
         :impl
     ]
-    runtime = Array:from <| Iter:unique <| Iter:flatten <| Iter:flatten [
-        Iter:map (fn :m -> m:runtime) :all-uses
-        Iter:map (fn :m -> m:runtime-if-used) :all-uses | Iter:filter (fn :a -> :a)
+    runtime = Array:from <| Iter:unique <| Iter:flatten [
+        Iter:map (fn :m -> m:runtime) :all-uses | Iter:flatten
+        Iter:map (fn :m -> m:runtime-if-used) :all-uses | Iter:filter (fn :a -> :a) | Iter:flatten
         :runtime
     ]
     compile-commands = Array:from <| Iter:unique <| Iter:flatten [
-        Iter:flatten (:all-uses | Iter:map (fn :u -> u:compile-commands) | Iter:filter (fn :a -> :a))
+        :all-uses | Iter:map (fn :u -> u:compile-commands) | Iter:filter (fn :a -> :a) | Iter:flatten
         :compile-commands
     ]
 
