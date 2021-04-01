@@ -570,26 +570,7 @@ exe = fn {
     Module: <| fn :context -> {
         context = propagate-flags :flags :context
         Module: :mod = link :site (rename :context exe-name :name) :module [] executable Bool:false
-        ret = mod :context
-        {
-            ^:ret
-            exec = fn ^:args ^{runtime-uses = default :rt-uses as [], ^:kwargs} -> {
-                runtime = Iter:flatten [ret:runtime, Iter:map (fn :m -> m:runtime) :rt-uses | Iter:flatten]
-                rt-env = !match (by-content context:toolchain:target:os) ^[
-                    windows -> {
-                        libpath = cache <| Path:with-output <| fn :libpath -> seq ^[
-                            fs:create-dir :libpath # Ensure path exists if empty
-                            !Array:from <| Iter:map (fn :f -> fs:copy :f :libpath) :runtime
-                        ]
-                        context:toolchain:target:lib-path-env :libpath
-                    }
-                    # Use preloaded libraries when possible; this avoids issues with filenames not
-                    # matching linked dependency names (from, e.g., SONAME)
-                    _ -> context:toolchain:target:preload-libraries :runtime
-                ]
-                exec ^{ ^:kwargs, env = { ^default kwargs:env as {}, ^:rt-env } } ret:file ^:args
-            }
-        }
+        mod :context
     }
 }
 
@@ -719,6 +700,37 @@ compile-commands = fn ^:outputs -> {
     seq (fs:create-dir :path) (fs:write :file :content) :file
 }
 
+## Execute an output.
+##
+## Arguments: `:output ^:args`
+##
+## Keyword Arguments:
+## * `:runtime-uses` - an array of extra modules whose runtime should also be used as part of the
+##   executable's runtime
+## * `^:kwargs` - forwarded to `exec`
+##
+## The output should be obtained with `get-output`.
+## The output must provide an executable `file` key in the result, like `exe` does.
+##
+## Returns the result of running `exec`.
+exec-output = fn :ret ^:args ^{runtime-uses = default :rt-uses as [], ^:kwargs} -> {
+    runtime = Iter:flatten [ret:runtime, Iter:map (fn :m -> m:runtime) :rt-uses | Iter:flatten]
+    rt-env = !match env:os ^[
+        windows -> {
+            libpath = cache <| Path:with-output <| fn :libpath -> seq ^[
+                fs:create-dir :libpath # Ensure path exists if empty
+                !Array:from <| Iter:map (fn :f -> fs:copy :f :libpath) :runtime
+            ]
+            { PATH = :libpath }
+        }
+        # Use preloaded libraries when possible; this avoids issues with filenames not
+        # matching linked dependency names (from, e.g., SONAME)
+        linux -> { LD_PRELOAD = String:join ":" <| Iter:map (Function:partial String:format "{}") :runtime }
+        macos -> { DYLD_INSERT_LIBRARIES = String:join ":" <| Iter:map (Function:partial String:format "{}") :runtime }
+    ]
+    exec ^{ ^:kwargs, env = { ^default kwargs:env as {}, ^:rt-env } } ret:file ^:args
+}
+
 ## The ergo-cpp library.
 ##
 ## To compile and link c++ code, this library abstracts groups of files and their header interfaces
@@ -735,7 +747,7 @@ compile-commands = fn ^:outputs -> {
 ##    compiled-module
 ##    exe dynamic-library static-library exact-name
 ##    get-output toolchain env-toolchain
-##    compile-commands)}}
+##    compile-commands exec-output)}}
 {
     ## Types used in the library values.
     ##
@@ -754,4 +766,5 @@ compile-commands = fn ^:outputs -> {
     header-paths
     exact-name
     compile-commands
+    exec-output
 }

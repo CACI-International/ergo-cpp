@@ -27,7 +27,7 @@ release-toolchain = c++:toolchain {
 
 debug = fn :p -> dist <| build :debug-toolchain :p
 release = fn :p -> dist <| build :release-toolchain :p
-run = fn :p -> (build :debug-toolchain :p):exec:
+run = fn :p -> c++:exec-output <| build :debug-toolchain :p
 
 write-commands = fn :result -> fs:copy (c++:compile-commands :result) :project-root
 
