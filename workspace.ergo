@@ -472,8 +472,8 @@ compiled-module = fn {
 } -> {
     Module: <| fn :context -> {
         evaled = eval-uses :context :uses
-        header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) evaled:header-dirs
-        header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps,:header-deps]) evaled:header-deps
+        header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [:includes, :header-dirs]) evaled:header-dirs
+        header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps, :header-deps]) evaled:header-deps
 
         module-result evaled:uses { impl = :link, runtime, compile-commands, header-dirs, header-deps, ^:rest }
     }
@@ -705,8 +705,8 @@ compile-commands = fn ^:outputs -> {
 ## Arguments: `:output ^:args`
 ##
 ## Keyword Arguments:
-## * `:runtime-uses` - an array of extra modules whose runtime should also be used as part of the
-##   executable's runtime
+## * `:runtime-uses` - an array of extra module outputs whose runtime should also be used as part of
+##   the executable's runtime
 ## * `^:kwargs` - forwarded to `exec`
 ##
 ## The output should be obtained with `get-output`.
