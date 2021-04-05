@@ -175,7 +175,12 @@ cached-path = fn :file-content-cache :path :depends -> {
             last-writer = by-content <| String:from (!if (fs:exists :last-writer-file) (fs:read :last-writer-file) "")
             # Shortcut and return `out` if the last writer was this value.
             # The returned value should have the same identity as `v`
-            variable (depends = :v) <| if (!:me = :last-writer) :out (seq (fs:write :last-writer-file :me) :v)
+            variable (depends = :v) <| if (!:me = :last-writer) :out <| seq ^[
+                fs:remove :last-writer-file
+                :v
+                fs:write :last-writer-file :me
+                :out
+            ]
         }
         [:out,:get-value]
     }
@@ -219,7 +224,9 @@ Module = type:new (bind = _ -> _ -> !error:throw "cannot directly access Module"
 ## Return a file path that depends on all include dependencies, given a map of header paths to dependencies
 ## that will be used for includes that do not resolve to a file.
 set-file-deps = fn ^{ banned-headers } :toolchain :file :untracked-compile-flags :compile-flags :known-headers -> {
-    deps = String:from (exec (env = { PATH = env:get PATH }) toolchain:compiler ^toolchain:compile-flags -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-compile-flags ^:compile-flags :file):stdout | String:trim
+    deps = (exec (env = { PATH = env:get PATH }) toolchain:compiler
+            ^toolchain:compile-flags -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-compile-flags
+            ^:compile-flags :file):stdout | String:from | String:trim
     # String:regex
     parts = Array <| match (String:split ":" :deps) ([_,^:parts] -> :parts)
     # Split on continuation newlines from make syntax
@@ -421,7 +428,9 @@ module = fn ^{ relative-dir } {
         }) :headers
         header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
 
-        compiles = Iter:map-all (fn :f -> compile (file-content-cache = context:options:file-content-cache) context:toolchain context:project-root (set-file-deps context:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags) :files
+        compiles = Iter:map-all (fn :f -> (compile (file-content-cache = context:options:file-content-cache)
+                context:toolchain context:project-root
+                (set-file-deps context:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags)) :files
         objects = Iter:map-all (fn :c -> c:object) :compiles
         compile-commands = Iter:map-all (fn :c -> c:compile-command) :compiles
 
