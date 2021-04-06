@@ -724,18 +724,16 @@ compile-commands = fn ^:outputs -> {
 ## Returns the result of running `exec`.
 exec-output = fn :ret ^:args ^{runtime-uses = default :rt-uses as [], ^:kwargs} -> {
     runtime = Iter:flatten [ret:runtime, Iter:map (fn :m -> m:runtime) :rt-uses | Iter:flatten]
+    libpath = cache <| Path:with-output <| fn :libpath -> seq ^[
+        fs:create-dir :libpath # Ensure path exists if empty
+        !Array:from <| Iter:map (fn :f -> fs:copy :f :libpath) :runtime
+    ]
     rt-env = !match env:os ^[
-        windows -> {
-            libpath = cache <| Path:with-output <| fn :libpath -> seq ^[
-                fs:create-dir :libpath # Ensure path exists if empty
-                !Array:from <| Iter:map (fn :f -> fs:copy :f :libpath) :runtime
-            ]
-            { PATH = :libpath }
-        }
+        windows -> { PATH = :libpath }
+        macos -> { DYLD_LIBRARY_PATH = :libpath }
         # Use preloaded libraries when possible; this avoids issues with filenames not
         # matching linked dependency names (from, e.g., SONAME)
         linux -> { LD_PRELOAD = String:join ":" <| Iter:map (Function:partial String:format "{}") :runtime }
-        macos -> { DYLD_INSERT_LIBRARIES = String:join ":" <| Iter:map (Function:partial String:format "{}") :runtime }
     ]
     exec ^{ ^:kwargs, env = { ^default kwargs:env as {}, ^:rt-env } } ret:file ^:args
 }
