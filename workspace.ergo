@@ -579,7 +579,7 @@ link = fn ^{abi-version = default :abi-version as ()} :call-site :name (Module: 
             # Make symlinks
             !Array:from <| Iter:map-all (fn (MapEntry: :to :from) -> {
                 path = Path:join (Path:parent :file) :to
-                exec ln -s :from :path |>:complete
+                !if (fs:exists :path) () (exec ln -s :from :path):complete
             }) :links
             :file
         ]
