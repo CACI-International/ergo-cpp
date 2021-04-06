@@ -576,14 +576,15 @@ link = fn ^{abi-version = default :abi-version as ()} :call-site :name (Module: 
             fs:create-dir <| Path:parent :file
             (run (String:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler
                 ^context:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag)
+            # Make symlinks
+            !Array:from <| Iter:map-all (fn (MapEntry: :to :from) -> {
+                path = Path:join (Path:parent :file) :to
+                exec ln -s :from :path |>:complete
+            }) :links
             :file
         ]
-        
-        # Make symlinks
-        links = Array:from <| Iter:map-all (fn (MapEntry: :to :from) -> {
-            path = Path:join :subdir :to
-            seq (fs:create-dir <| Path:parent :path) (exec ln -s :from :path):complete :path
-        }) :links
+
+        links = !Array:from <| Iter:map-all (fn (MapEntry: :to _) -> Path:join (Path:parent :file) :to) :links
 
         {
             file
