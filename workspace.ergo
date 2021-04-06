@@ -511,7 +511,7 @@ exact-name = {
 }
 
 ## Link a module.
-link = fn :call-site :name (Module: :mod) :additional-flags :type :include-headers -> {
+link = fn ^{abi-version = default :abi-version as ()} :call-site :name (Module: :mod) :additional-flags :type :include-headers -> {
     Module: <| fn :context -> {
         mod = mod :context
 
@@ -526,23 +526,70 @@ link = fn :call-site :name (Module: :mod) :additional-flags :type :include-heade
 
         ]
 
+        # Handle abi version specifics
+        {abi-flags,abiname,links,^_} = if (String :s = :abi-version) {
+            max-version = String:split . :s |>:0
+            compat-version = !match context:toolchain:target:os ^[
+                macos -> {
+                    prefix = String:split .dylib :name |>:0
+                    String:format "{}.{}.dylib" :prefix :max-version
+                }
+                _ -> String:format "{}.{}" :name :max-version
+            ]
+            abi-flags = !match context:toolchain:target:os ^[
+                macos -> {
+                    install-name = String:format "-Wl,-install_name,{}" :compat-version
+                    if (!0 = by-content :max-version) [:install-name] [
+                        :install-name
+                        String:format "-Wl,-compatibility_version,{}" :max-version
+                        String:format "-Wl,-current_version,{}" :abi-version
+                    ]
+                }
+                # XXX For now assume windows is using something gnuish
+                _ -> [String:format "-Wl,-soname,{}" :compat-version]
+            ]
+            abiname = !match context:toolchain:target:os ^[
+                macos -> {
+                    prefix = String:split .dylib :name |>:0
+                    String:format "{}.{}.dylib" :prefix :s
+                }
+                _ -> String:format "{}.{}" :name :s
+            ]
+            links = {
+                ::name = :compat-version
+                ::compat-version = if (!(by-content :compat-version) = by-content :abiname) Unset: :abiname
+            }
+        } {
+            abi-flags = []
+            abiname = :name
+            links = {}
+        }
+
         call-site = call-site :context
 
-        file = Path:join Path:new: :call-site :name
+        subdir = Path:join Path:new: :call-site
+        file = Path:join :subdir :abiname
 
-        [:file,:fcache] = cached-path context:options:file-content-cache :file [:call-site, :name, context:toolchain:compiler, context:toolchain:link-flags, :additional-flags]
+        [:file,:fcache] = cached-path context:options:file-content-cache :file [:call-site, :abiname, context:toolchain:compiler, context:toolchain:link-flags, :additional-flags]
 
         file = fcache <| seq ^[
             fs:create-dir <| Path:parent :file
-            run (String:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler ^context:toolchain:link-flags ^:additional-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag
+            (run (String:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler
+                ^context:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag)
             :file
         ]
+        
+        # Make symlinks
+        links = Array:from <| Iter:map-all (fn (MapEntry: :to :from) -> {
+            path = Path:join :subdir :to
+            seq (fs:create-dir <| Path:parent :path) (exec ln -s :from :path):complete :path
+        }) :links
 
         {
             file
             impl = [:file,^mod:runtime]
-            runtime = mod:runtime
-            runtime-if-used = [:file]
+            runtime = [^mod:runtime]
+            runtime-if-used = [:file,^:links]
             ^!if :include-headers { import {header-deps,header-dirs} = :mod } {}
             compile-commands = mod:compile-commands
         }
@@ -592,21 +639,26 @@ exe = fn {
 ## * `Module :mod` - the module to make into a library
 ## * `optional (Function :compile-flags)` - the compile flags generating function
 ## * `optional (Function :link-flags)` - the link flags generating function
+## * `optional (String :abi-version)` - the abi version of the dynamic library
+##   This is used to determine file names and set binary properties. It must be a string of the form
+##   `X[.Y[.Z]]`, where `X`, `Y`, and `Z` are non-negative integers.
 dynamic-library = fn {
     name = String :name
     module = Module :module
     compile-flags = default (Function :compile-flags) as (fn _ -> [])
     link-flags = optional (Function :link-flags)
+    abi-version = optional (String :abi-version)
 } -> {
     # Must always have -fPIC when compiling code in a shared library.
     flags = {
         compile-flags = fn :e -> [^compile-flags :e,-fPIC]
         link-flags
     }
+    abi-version = default :abi-version as ()
     site = call-site:
     Module: <| fn :context -> {
         context = propagate-flags :flags :context
-        Module: :mod = link :site (rename :context dynamic-library-name :name) :module [-shared] "dynamic library" Bool:true
+        Module: :mod = link ^{abi-version} :site (rename :context dynamic-library-name :name) :module [-shared] "dynamic library" Bool:true
         mod :context
     }
 }

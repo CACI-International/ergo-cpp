@@ -1,5 +1,10 @@
 # ergo-c++ changelog
 
+## 0.8.1  -- 2021-04-06
+* Add `abi-version` option to `dynamic-library`, supporting OS conventions for
+  abi versioning.
+* Fix `exec-output` on mac when runtime libraries are needed.
+
 ## 0.8.0  -- 2021-04-01
 * Add `compile-commands` to write a `compile_commands.json` file from outputs.
 * Change caching to (by default) only depend on compile flags. Add the `options`
