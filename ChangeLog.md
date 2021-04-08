@@ -1,5 +1,10 @@
 # ergo-c++ changelog
 
+## 0.8.2  -- 2021-04-07
+* Improve behavior of compile-flags/link-flags.
+  * Compile-flags for a linked output are inherited only by modules that linked
+    output uses. Link-flags are not inherited at all.
+
 ## 0.8.1  -- 2021-04-06
 * Add `abi-version` option to `dynamic-library`, supporting OS conventions for
   abi versioning.

@@ -186,22 +186,27 @@ cached-path = fn :file-content-cache :path :depends -> {
     }
 }
 
+toolchain-compile-flags = fn :toolchain -> [
+    ^toolchain:compile-flags
+    ^default toolchain:extra-compile-flags as []
+]
+
 ## Compile a file with the given flags.
 ## The project-root argument is used to ensure the file paths in compiled debug sections are user-friendly.
 compile = fn ^{ file-content-cache } :toolchain :project-root :file :untracked-flags ^:flags -> {
     proj-path = !Path:relative :project-root :file
     out = Path:join Path:new: <| String:format "{}.o" :proj-path
 
-    [:out,:ocache] = cached-path :file-content-cache :out [:proj-path, toolchain:compiler, toolchain:compile-flags, :flags]
+    [:out,:ocache] = cached-path :file-content-cache :out [:proj-path, toolchain:compiler, toolchain-compile-flags :toolchain, :flags]
 
     {
         object = ocache <| seq ^[
             fs:create-dir <| Path:parent :out
-            run (String:format "compiling {}" :file) (env = { PATH = env:get PATH }) toolchain:compiler ^toolchain:compile-flags -c -o :out ^(variable :untracked-flags) ^:flags :file
+            run (String:format "compiling {}" :file) (env = { PATH = env:get PATH }) toolchain:compiler ^(toolchain-compile-flags :toolchain) -c -o :out ^(variable :untracked-flags) ^:flags :file
             :out
         ]
         compile-command = {
-            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:compiler], toolchain:compile-flags, [-c,-o,:out], variable :untracked-flags, :flags, [:file]]
+            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:compiler], toolchain-compile-flags :toolchain, [-c,-o,:out], variable :untracked-flags, :flags, [:file]]
             file
             out
         }
@@ -225,7 +230,7 @@ Module = type:new (bind = _ -> _ -> !error:throw "cannot directly access Module"
 ## that will be used for includes that do not resolve to a file.
 set-file-deps = fn ^{ banned-headers } :toolchain :file :untracked-compile-flags :compile-flags :known-headers -> {
     deps = (exec (env = { PATH = env:get PATH }) toolchain:compiler
-            ^toolchain:compile-flags -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-compile-flags
+            ^(toolchain-compile-flags :toolchain) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-compile-flags
             ^:compile-flags :file):stdout | String:from | String:trim
     # String:regex
     parts = Array <| match (String:split ":" :deps) ([_,^:parts] -> :parts)
@@ -236,7 +241,7 @@ set-file-deps = fn ^{ banned-headers } :toolchain :file :untracked-compile-flags
     # Remove empty parts
     parts = Iter:filter (fn :v -> !match :v ("" -> Bool:false) (_ -> Bool:true)) :parts
     # Cache based on the file, compiler, and compile flags
-    parts = cache <| variable (depends = [file-deps, fs:track :file, toolchain:compiler, toolchain:compile-flags, :compile-flags]) :parts
+    parts = cache <| variable (depends = [file-deps, fs:track :file, toolchain:compiler, toolchain-compile-flags :toolchain, :compile-flags]) :parts
     # existing files depend on the result of fs:track, otherwise look in known-headers
     banned-check = !if :banned-headers (fn :x -> !if banned-headers::x { !error:throw <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
     depends = !Iter:map (fn :dep -> {
@@ -488,17 +493,17 @@ compiled-module = fn {
     }
 }
 
-propagate-flags = fn {compile-flags,link-flags} :context -> {
-    extra-compile-flags = !if :compile-flags (compile-flags context:extra) []
+eval-flags = fn {compile-flags,link-flags} :context -> {
+    extra-cflags = !if :compile-flags (compile-flags context:extra) []
     extra-link-flags = !if :link-flags (link-flags context:extra) []
-    {
-        ^:context,
+    context = {
+        ^:context
         toolchain = {
             ^context:toolchain
-            compile-flags = [^context:toolchain:compile-flags, ^:extra-compile-flags]
-            link-flags = [^context:toolchain:link-flags, ^:extra-link-flags]
+            extra-compile-flags = :extra-cflags
         }
     }
+    {context, extra-link-flags}
 }
 
 ## Flag a string as being an exact name, so that no target-specific rules are applied.
@@ -625,8 +630,8 @@ exe = fn {
     flags = {compile-flags, link-flags}
     site = call-site:
     Module: <| fn :context -> {
-        context = propagate-flags :flags :context
-        Module: :mod = link :site (rename :context exe-name :name) :module [] executable Bool:false
+        {context,extra-link-flags} = eval-flags :flags :context
+        Module: :mod = link :site (rename :context exe-name :name) :module :extra-link-flags executable Bool:false
         mod :context
     }
 }
@@ -658,8 +663,9 @@ dynamic-library = fn {
     abi-version = default :abi-version as ()
     site = call-site:
     Module: <| fn :context -> {
-        context = propagate-flags :flags :context
-        Module: :mod = link ^{abi-version} :site (rename :context dynamic-library-name :name) :module [-shared] "dynamic library" Bool:true
+        {context,extra-link-flags} = eval-flags :flags :context
+        Module: :mod = (link ^{abi-version} :site (rename :context dynamic-library-name :name)
+            :module [-shared,^:extra-link-flags] "dynamic library" Bool:true)
         mod :context
     }
 }
@@ -672,17 +678,16 @@ dynamic-library = fn {
 ## * `String :name` - the name of the library
 ## * `Module :mod` - the module to make into a library
 ## * `optional (Function :compile-flags)` - the compile flags generating function
-## * `optional (Function :link-flags)` - the link flags generating function
 static-library = fn {
     name = String :name
     module = Module: :mod
     compile-flags = optional (Function :compile-flags)
-    link-flags = optional (Function :link-flags)
 } -> {
-    flags = {compile-flags,link-flags}
+    flags = {compile-flags}
     site = call-site:
     Module: <| fn :context -> {
-        mod = mod <| propagate-flags :flags :context
+        {context,^_} = eval-flags :flags :context
+        mod = mod :context
 
         site = site :context
         filename = rename :context static-library-name :name
