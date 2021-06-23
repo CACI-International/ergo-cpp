@@ -125,7 +125,7 @@ toolchain = fn {
             ## Get the filename for a static library with the given name.
             static-library-name = !match :os ^[
                 windows -> fn :name -> String:format "{}.lib" :name
-                _       -> fn :name -> String:format "{}.a" :name
+                _       -> fn :name -> String:format "lib{}.a" :name
             ]
 
             ## Get the filename for a dynamic library with the given name.

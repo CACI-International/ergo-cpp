@@ -1,5 +1,10 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Fix a bug with symbolic link creation.
+* Correct `static-library-name` to return a name with a `lib` prefix for
+  linux/mac.
+
 ## 0.8.2  -- 2021-04-07
 * Improve behavior of compile-flags/link-flags.
   * Compile-flags for a linked output are inherited only by modules that linked
