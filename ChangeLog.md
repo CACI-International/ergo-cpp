@@ -1,6 +1,6 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.8.3  -- 2021-06-23
 * Fix a bug with symbolic link creation.
 * Correct `static-library-name` to return a name with a `lib` prefix for
   linux/mac.
