@@ -1,22 +1,23 @@
 # The c++ module provides an abstraction over c++ compilation and linking.
 # This module assumes binaries that are compatible with gcc flags (typically gcc and clang).
 
-^std:
+std:import { cache, default, env, exec, fs, match, task } = std:
+std:import { Array, Bool, Iter, Map, Path, String } = std:
 
-log = log sublog c++
+log = std:log:sublog c++
 
-script-dir = script:dir:
+script-dir = !Path:parent <| std:source-path ()
 
 ## Return the value of an environment variable, or an alternative value if not set.
 env-or = fn :name :alternative -> default (env:get :name) as :alternative
 
 ## Run an executable as a task (counting as one task).
-run = fn :description ^:args ^{^:kwargs} -> task ^{task-count = 1} :description (exec ^:args ^:kwargs):complete
+run = fn :description ^:args -> task (count = 1) :description (exec ^:args):complete
 
 ## Parse space-separated flags from an environment variable, if set.
 parse-env-flags = fn :var -> {
     strs = String:split " " (env-or :var "")
-    Array:from <| Iter:filter (fn :v -> !match :v ("" -> Bool:false) (_ -> Bool:true)) :strs
+    Array:from <| Iter:filter (fn :v -> match :v ["" -> Bool:false, _ -> Bool:true]) :strs
 }
 
 # TODO divorce the linking/native/binutils stuff from c/c++, separate c and c++ into separate
@@ -112,8 +113,8 @@ toolchain = fn {
             output = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -imacros cassert -E -P :file |>:stdout
             String:from :output | String:trim | String:split "\"" |>:1
         }
-        !log debug <| String:format "detection file `{}` yielded `{}`" :filename :result
-        by-content :result
+        log debug <| String:format "detection file `{}` yielded `{}`" :filename :result
+        :result
     }
 
     {
@@ -141,13 +142,13 @@ toolchain = fn {
             compiler = detect compiler.h
             c++lib = detect cpplib.h
 
-            c++abi = !match :c++lib ^[
+            c++abi = match :c++lib [
                 libstdc++ -> detect gnu_abi.h
                 _         -> c++11
             ]
 
             ## Get the environment variables that should be set to add a path to the library lookup path.
-            lib-path-env = !match :os ^[
+            lib-path-env = match :os [
                 macos -> fn :path -> { DYLD_LIBRARY_PATH = :path }
                 ios   -> fn :path -> { DYLD_LIBRARY_PATH = :path }
                 linux -> fn :path -> { LD_LIBRARY_PATH = :path }
@@ -157,21 +158,21 @@ toolchain = fn {
             ## Get the environment variables that should be set to preload an array of libraries.
             ##
             ## Arguments: `(Array:Of :Path |> :libs)`
-            preload-libraries = !match :os ^[
-                macos -> fn :libs -> { DYLD_INSERT_LIBRARIES = String:join ":" <| Iter:map (Function:partial String:format "{}") :libs }
-                ios -> fn :libs -> { DYLD_INSERT_LIBRARIES = String:join ":" <| Iter:map (Function:partial String:format "{}") :libs }
-                linux -> fn :libs -> { LD_PRELOAD = String:join ":" <| Iter:map (Function:partial String:format "{}") :libs }
+            preload-libraries = match :os [
+                macos -> fn :libs -> { DYLD_INSERT_LIBRARIES = String:join ":" <| Iter:map (std:Function:partial String:format "{}") :libs }
+                ios -> fn :libs -> { DYLD_INSERT_LIBRARIES = String:join ":" <| Iter:map (std:Function:partial String:format "{}") :libs }
+                linux -> fn :libs -> { LD_PRELOAD = String:join ":" <| Iter:map (std:Function:partial String:format "{}") :libs }
                 _ -> fn _ -> {}
             ]
 
             ## Get the filename for a static library with the given name.
-            static-library-name = !match :os ^[
+            static-library-name = match :os [
                 windows -> fn :name -> String:format "{}.lib" :name
                 _       -> fn :name -> String:format "lib{}.a" :name
             ]
 
             ## Get the filename for a dynamic library with the given name.
-            dynamic-library-name = !match :os ^[
+            dynamic-library-name = match :os [
                 windows -> fn :name -> String:format "{}.dll" :name
                 linux   -> fn :name -> String:format "lib{}.so" :name
                 macos   -> fn :name -> String:format "lib{}.dylib" :name
@@ -180,7 +181,7 @@ toolchain = fn {
             ]
 
             ## Get the filename for an executable with the given name.
-            exe-name = !match :os ^[
+            exe-name = match :os [
                 windows -> fn :name -> String:format "{}.exe" :name
                 _       -> fn :name -> :name
             ]
@@ -230,21 +231,35 @@ env-toolchain = fn: -> toolchain {
     link-flags = parse-env-flags LDFLAGS
 }
 
+## Handles caching of the given path.
+##
+## Returns `[path, getter]`, where:
+## * `path` is the same file path as the input, identified based on content if `file-content-cache` is
+## true, and otherwise based on `depends`.
+## * `getter` is the function to use to retrieve the path when given the means of writing the path.
+##   * I.e. you use the returned `path` in some expression that will write to it, and pass that
+##   expression to `getter`.
 cached-path = fn :file-content-cache :path :depends -> {
-    if :file-content-cache [:path,:cache] {
+    std:if :file-content-cache [:path,:cache] {
         # We want the path to be explicitly cached on the deps.
-        out = cache <| variable ^{ depends } :path
+        out = cache <| std:variable ^{ depends } :path
         get-value = fn :v -> {
-            last-writer-file = cache <| variable (depends = [last-writer, :out]) Path:new:
-            me = by-content <| String:from <| cache <| variable (depends = :v) Path:new:
-            last-writer = by-content <| String:from (!if (fs:exists :last-writer-file) (fs:read :last-writer-file) "")
+            # Get the file which tracks the last writer
+            last-writer-file = cache <| std:variable (depends = [last-writer, :out]) Path:new:
+            # Create a string which tracks the argument
+            me = !String:from <| cache <| std:variable (depends = :v) Path:new:
+            # Read the last writer, if any.
+            last-writer = !String:from (std:if (fs:exists :last-writer-file) (fs:read :last-writer-file) "")
             # Shortcut and return `out` if the last writer was this value.
             # The returned value should have the same identity as `v`
-            variable (depends = :v) <| if (!:me = :last-writer) :out <| seq ^[
-                fs:remove :last-writer-file
-                :v
-                fs:write :last-writer-file :me
-                :out
+            std:variable (depends = :v) <| match :last-writer [
+                !:me -> :out
+                _ -> {
+                    fs:remove :last-writer-file
+                    :v
+                    fs:write :last-writer-file :me
+                    :out
+                }
             ]
         }
         [:out,:get-value]
@@ -259,21 +274,22 @@ toolchain-compile-flags = fn :toolchain -> [
 ## Compile a file with the given flags.
 ## The project-root argument is used to ensure the file paths in compiled debug sections are user-friendly.
 compile = fn ^{ file-content-cache } :toolchain :project-root :file :untracked-flags ^:flags -> {
-    proj-path = !Path:relative :project-root :file
+    proj-path = Path:relative :project-root :file
     out = Path:join Path:new: <| String:format "{}.o" :proj-path
 
     [:out,:ocache] = cached-path :file-content-cache :out [:proj-path, toolchain:compiler, toolchain-compile-flags :toolchain, :flags]
 
     {
-        object = ocache <| seq ^[
+        object = ocache {
             fs:create-dir <| Path:parent :out
-            run (String:format "compiling {}" :file) (env = { PATH = env:get PATH }) toolchain:compiler ^(toolchain-compile-flags :toolchain) -c -o :out ^(variable :untracked-flags) ^:flags :file
+            run (String:format "compiling {}" :file) (env = { PATH = env:get PATH }) toolchain:compiler ^(toolchain-compile-flags :toolchain) -c -o :out ^(std:variable :untracked-flags) ^:flags :file
             :out
-        ]
+        }
         compile-command = {
-            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:compiler], toolchain-compile-flags :toolchain, [-c,-o,:out], variable :untracked-flags, :flags, [:file]]
-            file
-            out
+            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:compiler], toolchain-compile-flags :toolchain, [-c,-o,:out], std:variable :untracked-flags, :flags, [:file]]
+            file = String:from :file
+            output = String:from :out
+            directory = "/"
         }
     }
 }
@@ -285,10 +301,10 @@ to-includes = fn :header-dirs -> {
 
 ## The Module type.
 ##
-## Internally, the type holds a function which, when applied to a _context_, yields some result.
-Module = type:new (bind = _ -> _ -> !error:throw "cannot directly access Module") "ergo-cpp:Module" <| match:value ^[
-    fn (Function :f) -> Function:memoize :f
-    pat :out -> :f -> { !:out = :f }
+## Internally, the type holds a single value, often a dynamic one that yields a Map.
+Module = std:type:new (bind = _ -> :v -> std:Error: (source=:v) "cannot directly access Module") "ergo-cpp:Module" <| match:value [
+    fn :v -> cache ^no-persist :v
+    pat :out -> :v -> bind :out :v
 ]
 
 ## Return a file path that depends on all include dependencies, given a map of header paths to dependencies
@@ -297,37 +313,45 @@ set-file-deps = fn ^{ banned-headers } :toolchain :file :untracked-compile-flags
     deps = (exec (env = { PATH = env:get PATH }) toolchain:compiler
             ^(toolchain-compile-flags :toolchain) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-compile-flags
             ^:compile-flags :file):stdout | String:from | String:trim
-    # String:regex
-    parts = Array <| match (String:split ":" :deps) ([_,^:parts] -> :parts)
+    String:format "{}: {}" _ :parts = :deps
     # Split on continuation newlines from make syntax
-    parts = Iter:map (fn :p -> String:split "\\\n" :p) :parts | Iter:flatten
+    parts = String:split "\\\n" :parts
     # Split on spaces (XXX this will break on filenames with spaces)
     parts = Iter:map (fn :p -> String:split " " :p) :parts | Iter:flatten
     # Remove empty parts
-    parts = Iter:filter (fn :v -> !match :v ("" -> Bool:false) (_ -> Bool:true)) :parts
+    parts = Iter:filter (fn :v -> match :v ["" -> Bool:false,_ -> Bool:true]) :parts
     # Cache based on the file, compiler, and compile flags
-    parts = cache <| variable (depends = [file-deps, fs:track :file, toolchain:compiler, toolchain-compile-flags :toolchain, :compile-flags]) :parts
+    parts = cache <| std:variable (depends = [file-deps, !fs:track :file, toolchain:compiler, toolchain-compile-flags :toolchain, :compile-flags]) :parts
     # existing files depend on the result of fs:track, otherwise look in known-headers
-    banned-check = !if :banned-headers (fn :x -> !if banned-headers::x { !error:throw <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
-    depends = !Iter:map (fn :dep -> {
-        !if (fs:exists <| Path:join :dep) (fs:track :dep) {
-            !match known-headers:(!:dep) ^[
-                Unset _ -> banned-check !:dep
-                Function:pass
+    banned-check = std:if :banned-headers (fn :x -> std:if banned-headers::x { std:Error: (source=:file) <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
+    depends = !Iter:map (fn :dep -> !std:eval {
+        std:if (fs:exists <| Path:join :dep) (fs:track :dep) {
+            match known-headers::dep [
+                std:Unset -> banned-check :dep
+                std:Function:pass
             ]
         }
     }) :parts
-    variable ^{ depends } :file
+    std:variable ^{ depends } :file
 }
 
+srcdir = pat :x -> match:value [
+    std:Path :p -> bind :x :p
+    :other -> bind :x <| match (std:source-path :other) [std:Unset -> std:env:current-dir, :p -> Path:parent :p]
+]
 
-ByContent = pat :tgt -> :v -> {!:tgt = by-content :v}
+srcpath = pat :x -> match:value [
+    std:Path :p -> bind :x :p
+    :other -> bind :x <| default (std:source-path :other) as std:env:current-dir
+]
+
+glob-src = fn (dir = srcdir :dir) :pattern -> fs:glob <| Path:join :dir :pattern
 
 ## Get `files` in the current script directory.
 ##
 ## The return value is suitable to be passed directly as the `files` key in the `module`
 ## configuration.
-all-files = fn: -> fs:glob *.cpp
+all-files = fn (dir = srcdir :dir) -> glob-src ^{dir} *.cpp
 
 ## Get `headers` from a heirarchical description.
 ##
@@ -342,15 +366,15 @@ all-files = fn: -> fs:glob *.cpp
 ## The return value is suitable to be passed directly as the `headers` key in the `module`
 ## configuration.
 header-paths = {
-    inner = Function:recursive <| fn :self :descr -> {
-        !match :descr ^[
-            String (ByContent all) -> Iter:map (fn :a -> MapEntry: (by-content (Path:join (Path:name :a))) :a) <| fs:glob *.h
-            [^:files] -> Iter:map (fn :a -> MapEntry: (by-content (Path:join (Path:name (Path:join :a)))) (Path:join :dir :a)) :files
-            {^:dirs} -> {
-                Iter:flatten <| Iter:map (fn (MapEntry: :key :val) -> {
+    inner = std:Function:recursive <| fn :self :descr -> {
+        match :descr [
+            all -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name :a)) :a) <| glob-src (source=:descr) *.h
+            Array :files -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name (Path:join :a))) (Path:join :a)) :files
+            Map :dirs -> {
+                Iter:flatten <| Iter:map (fn (std:MapEntry: :key :val) -> {
                     paths = self :self :val
                     key = Path:join ^(String:split / :key)
-                    Iter:map (fn (MapEntry: :to :from) -> MapEntry: (by-content <| Path:join :key :to) :from) :paths
+                    Iter:map (fn (std:MapEntry: :to :from) -> std:MapEntry: (!Path:join :key :to) :from) :paths
                 }) :dirs
             }
         ]
@@ -359,22 +383,24 @@ header-paths = {
 }
 
 ## Convert a path to an include string.
-path-to-include = fn :p -> by-content <| String:join "/" <| Path:split :p
+path-to-include = fn :p -> String:join "/" <| Path:split :p
 
 modules = Array:Of :Module
-match-uses = pat :tgt -> match:value ^[
+match-uses = pat :tgt -> match:value [
     { private = default (modules :private) as []
       public = default (modules :public) as []
       export = default (modules :export) as []
     } -> {
-        !:tgt = { private, public, export }
+        bind :tgt { private, public, export }
     }
 
-    default (modules :uses) as [] -> { !:tgt = { private = :uses, public = [], export = [] } }
+    default (modules :uses) as [] -> {
+        bind :tgt { private = :uses, public = [], export = [] }
+    }
 ]
 
 vis = {
-    map = fn (Function :f) :v -> {
+    map = fn (std:Function :f) :v -> {
         private = f v:private
         public = f v:public
         export = f v:export
@@ -386,17 +412,34 @@ vis = {
         internal = internal :v
         external = external :v
     }
-    map* = fn (Function :f) :v -> {
+    map* = fn (std:Function :f) :v -> {
         internal = f v:internal
         external = f v:external
     }
 }
 
-## Evaluate uses with a context.
+context-key = "ergo-cpp:context"
+
+eval-when = fn :when :val -> !std:eval :val
+
+## The ergo-cpp context.
 ##
-## Arguments: `:context :uses`
+## This is a dynamic binding evaluating to a `Map` containing:
+## * `Path :project-root` - The root directory of the project.
+## * `:toolchain` - The toolchain to use.
+## * `Map :options` - Additional options affecting compilation and linking.
+## * `Map :extra` - User-defined values.
+context = std:dynamic:get :context-key
+
+context-fn = pat :ctx ^:rest -> :v -> {
+    bind :ctx <| !eval-when :v <| std:dynamic:get :context-key
+    bind :rest :v
+}
+
+## Evaluate uses.
 ##
-## `context` should be the module context.
+## Arguments: `:uses`
+##
 ## `uses` should be the output of a `match-uses` binding, specifically a map of
 ## private/public/export uses modules.
 ##
@@ -404,13 +447,13 @@ vis = {
 ## * `uses` - all uses outputs
 ## * `header-dirs` - a map of internal/external header-dirs
 ## * `header-deps` - a map of internal/external header-deps
-eval-uses = fn :context :uses -> {
-    uses = vis:map (Function:partial Iter:map-all (fn (Module: :u) -> u :context)) :uses
+eval-uses = fn :uses -> {
+    uses = vis:map (std:Function:partial Iter:map (fn (Module: :u) -> :u)) :uses
     int-ext = vis:eval :uses
-    uses-header-dirs = vis:map* (fn :uses -> (:uses | Iter:map (fn :m -> m:header-dirs) | Iter:flatten | Iter:unique)) :int-ext
-    uses-header-deps = vis:map* (fn :uses -> !(:uses | Iter:map (fn :m -> m:header-deps) | Iter:filter (fn :a -> :a) | Iter:flatten | Map:from)) :int-ext
+    uses-header-dirs = vis:map* (fn :uses -> <| :uses | Iter:map (fn :m -> m:header-dirs) | Iter:flatten | Iter:unique) :int-ext
+    uses-header-deps = vis:map* (fn :uses -> <| :uses | Iter:map (fn :m -> m:header-deps) | Iter:filter (fn :a -> :a) | Iter:flatten | Map:from) :int-ext
     {
-        uses = vis:all :uses, 
+        uses = vis:all :uses
         header-dirs = :uses-header-dirs
         header-deps = :uses-header-deps
     }
@@ -449,10 +492,9 @@ module-result = fn :all-uses { impl, runtime, compile-commands, header-dirs, hea
 ##   * `private`: an array of modules which will be used when compiling files in this module.
 ##   * `export`: an array of modules which will be visible to consumers of this module.
 ## * `compile-flags`: additional compilation flags to use when compiling files in this module
-##   This should be a function which is passed the extra context and returns an array of flags.
 ## 
 ## In both files and headers, if a file is a relative path, it will be relative to the calling
-## script directory. To set the relative path explicitly, pass the keyword argument `relative-dir`.
+## script directory. To set the relative path explicitly, pass the keyed argument `relative-dir`.
 ## 
 ## The returned value will be a Module, where the output will be a map with the following keys:
 ## * `impl`: an array of compiled object files
@@ -462,53 +504,48 @@ module-result = fn :all-uses { impl, runtime, compile-commands, header-dirs, hea
 ##   its identity)
 ## * `runtime`: an array of any additional requirements of the module (inherited from used modules)
 ## * `compile-commands`: an array of compile commands to build the module and all dependent modules
-module = fn ^{ relative-dir } {
+module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
     files = default (Array :files) as []
     headers = default (Map :headers) as {}
     uses = match-uses :uses
-    compile-flags = default (Function :compile-flags) as (fn _ -> [])
-} -> {
-    dir = default :relative-dir as script:dir:
+    compile-flags = default (std:Function :compile-flags) as (fn _ -> [])
+} -> Module: {
+    files = Iter:map (fn :f -> Path:join :relative-dir :f) :files
+    headers = Iter:map (fn (std:MapEntry: :to :from) -> std:MapEntry: :to (Path:join :relative-dir :from)) :headers
+    evaled = eval-uses :uses
 
-    files = Iter:map (fn :f -> Path:join :dir :f) :files
-    headers = Iter:map (fn (MapEntry: :to :from) -> MapEntry: :to (Path:join :dir :from)) :headers
-
-    Module: <| fn :context -> {
-        evaled = eval-uses :context :uses
-
-        header-dir = cache <| Path:with-output <| fn :dir -> seq ^[
-            fs:create-dir :dir # Ensure path exists if empty
-            # Force the array so the inner values are the results of `fs:copy`, which will include
-            # the `fs:track` identities (so if a header changes, the header-dir is rebuilt).
-            !Array:from <| Iter:map-all (fn (MapEntry: :to :from) -> fs:copy (fs:track :from) (Path:join :dir :to)) :headers
-        ]
-
-        header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) evaled:header-dirs
-
-        includes = to-includes header-dirs:internal
-        compile-flags = compile-flags context:extra
-
-        # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
-        # ban internal header-deps so that if they are used, an error will occur about exposing a private module
-        mod-header-deps = Iter:map-all (fn (MapEntry: :to :from) -> {
-            MapEntry: (path-to-include :to) (
-                set-file-deps (banned-headers = evaled:header-deps:internal)
-                    context:toolchain :from [-I,:header-dir] :compile-flags evaled:header-deps:external
-                )
-        }) :headers
-        header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
-
-        compiles = Iter:map-all (fn :f -> (compile (file-content-cache = context:options:file-content-cache)
-                context:toolchain context:project-root
-                (set-file-deps context:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags)) :files
-        objects = Iter:map-all (fn :c -> c:object) :compiles
-        compile-commands = Iter:map-all (fn :c -> c:compile-command) :compiles
-
-        module-result evaled:uses { impl = :objects, runtime = [], compile-commands, header-dirs, header-deps }
+    header-dir = cache <| Path:with-output <| fn :dir -> {
+        fs:create-dir :dir # Ensure path exists if empty
+        # Force the array so the inner values are the results of `fs:copy`, which will include
+        # the `fs:track` identities (so if a header changes, the header-dir is rebuilt).
+        !Array:from <| Iter:map (fn (std:MapEntry: :to :from) -> fs:copy (!fs:track :from) (Path:join :dir :to)) :headers
     }
+
+    header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) evaled:header-dirs
+
+    includes = to-includes header-dirs:internal
+    compile-flags = compile-flags ctx:extra
+
+    # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
+    # ban internal header-deps so that if they are used, an error will occur about exposing a private module
+    mod-header-deps = !Iter:map (fn (std:MapEntry: :to :from) -> {
+        std:MapEntry: (path-to-include :to) (
+            !std:eval <| set-file-deps (banned-headers = evaled:header-deps:internal)
+                ctx:toolchain :from [-I,:header-dir] :compile-flags evaled:header-deps:external
+            )
+    }) :headers
+    header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
+
+    compiles = !Iter:map (fn :f -> (compile (file-content-cache = ctx:options:file-content-cache)
+            ctx:toolchain ctx:project-root
+            (!std:eval <| set-file-deps ctx:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags)) :files
+    objects = Iter:map (fn :c -> c:object) :compiles
+    compile-commands = Iter:map (fn :c -> c:compile-command) :compiles
+
+    module-result evaled:uses { impl = :objects, runtime = [], compile-commands, header-dirs, header-deps }
 }
 
-## Create a module that is already compiled with the given configuration.
+## Create a module that is already compiled.
 ##
 ## Arguments: `(Map :config)`
 ## 
@@ -548,134 +585,129 @@ compiled-module = fn {
     compile-commands = default (Array :compile-commands) as []
     uses = match-uses :uses
     ^:rest
-} -> {
-    Module: <| fn :context -> {
-        evaled = eval-uses :context :uses
-        header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [:includes, :header-dirs]) evaled:header-dirs
-        header-deps = vis:map* (fn :uses-header-deps -> !Map:from <| Iter:flatten [:uses-header-deps, :header-deps]) evaled:header-deps
+} -> Module: {
+    evaled = eval-uses :uses
+    header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [:includes, :header-dirs]) evaled:header-dirs
+    header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps, :header-deps]) evaled:header-deps
 
-        module-result evaled:uses { impl = :link, runtime, compile-commands, header-dirs, header-deps, ^:rest }
-    }
+    module-result evaled:uses { impl = :link, runtime, compile-commands, header-dirs, header-deps, ^:rest }
 }
 
-eval-flags = fn {compile-flags,link-flags} :context -> {
-    extra-cflags = !if :compile-flags (compile-flags context:extra) []
-    extra-link-flags = !if :link-flags (link-flags context:extra) []
-    context = {
-        ^:context
+eval-flags = context-fn :ctx {compile-flags, link-flags} :f -> {
+    newctx = {
+        ^:ctx
         toolchain = {
-            ^context:toolchain
-            extra-compile-flags = :extra-cflags
+            ^ctx:toolchain
+            extra-compile-flags = !std:by-content :compile-flags
         }
     }
-    {context, extra-link-flags}
+    link-flags = !std:by-content :link-flags
+    std:dynamic:eval { ::context-key = :newctx } <| f :link-flags
 }
 
 ## Flag a string as being an exact name, so that no target-specific rules are applied.
 exact-name = {
     key = "ergo-cpp:exact-name"
-    :arg -> !match :arg ^[
-        fn :name -> meta:set :name :key true
-        pat :out -> :name -> if (!true = meta:get :name :key) { !:out = :name } (!error:throw (pattern=()) "not an exact-name")
+    match:value [
+        fn :name -> std:meta:set :name :key ()
+        pat :out -> :name -> std:if (std:meta:get :name :key) (bind :out :name) (std:Error: (source=:name) "not an exact-name")
     ]
 }
 
 ## Link a module.
-link = fn ^{abi-version = default :abi-version as ()} :call-site :name (Module: :mod) :additional-flags :type :include-headers -> {
-    Module: <| fn :context -> {
-        mod = mod :context
+link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source) (String :name) (Module: :mod) :additional-flags :type :include-headers -> Module: {
+    os = ctx:toolchain:target:os
+    start-group-flag = match :os [
+        linux -> ["-Wl,--start-group"]
+        _     -> []
+    ]
 
-        start-group-flag = !match context:toolchain:target:os ^[
-            linux -> ["-Wl,--start-group"]
-            _     -> []
-        ]
+    end-group-flag = match :os [
+        linux -> ["-Wl,--end-group"]
+        _     -> []
 
-        end-group-flag = !match context:toolchain:target:os ^[
-            linux -> ["-Wl,--end-group"]
-            _     -> []
+    ]
 
-        ]
-
-        # Handle abi version specifics
-        {abi-flags,abiname,links,^_} = if (String :s = :abi-version) {
-            max-version = String:split . :s |>:0
-            compat-version = !match context:toolchain:target:os ^[
+    # Handle abi version specifics
+    {abi-flags,abiname,links,^_} = match :abi-version [
+        String :s -> {
+            String:format "{}.{}" :max-version _ = :s
+            compat-version = match :os [
                 macos -> {
-                    prefix = String:split .dylib :name |>:0
+                    String:format "{}.dylib" :prefix = :name
                     String:format "{}.{}.dylib" :prefix :max-version
                 }
                 _ -> String:format "{}.{}" :name :max-version
             ]
-            abi-flags = !match context:toolchain:target:os ^[
+            abi-flags = match :os [
                 macos -> {
                     install-name = String:format "-Wl,-install_name,{}" :compat-version
-                    if (!0 = by-content :max-version) [:install-name] [
-                        :install-name
-                        String:format "-Wl,-compatibility_version,{}" :max-version
-                        String:format "-Wl,-current_version,{}" :abi-version
+                    match :max-version [
+                        0 -> [:install-name]
+                        _ -> [
+                            :install-name,
+                            String:format "-Wl,-compatibility_version,{}" :max-version,
+                            String:format "-Wl,-current_version,{}" :abi-version
+                        ]
                     ]
                 }
                 # XXX For now assume windows is using something gnuish
                 _ -> [String:format "-Wl,-soname,{}" :compat-version]
             ]
-            abiname = !match context:toolchain:target:os ^[
+            abiname = match :os [
                 macos -> {
-                    prefix = String:split .dylib :name |>:0
+                    String:format "{}.dylib" :prefix = :name
                     String:format "{}.{}.dylib" :prefix :s
                 }
                 _ -> String:format "{}.{}" :name :s
             ]
             links = {
                 ::name = :compat-version
-                ::compat-version = if (!(by-content :compat-version) = by-content :abiname) Unset: :abiname
+                ::compat-version = match :abiname [(!:compat-version) -> std:Unset:, std:Function:pass]
             }
-        } {
+        }
+        _ -> {
             abi-flags = []
             abiname = :name
             links = {}
         }
+    ]
 
-        call-site = call-site :context
+    call-site = Path:relative ctx:project-root :source
 
-        subdir = Path:join Path:new: :call-site
-        file = Path:join :subdir :abiname
+    subdir = Path:join Path:new: :call-site
+    file = Path:join :subdir :abiname
 
-        [:file,:fcache] = cached-path context:options:file-content-cache :file [:call-site, :abiname, context:toolchain:compiler, context:toolchain:link-flags, :additional-flags]
+    [:file,:fcache] = cached-path ctx:options:file-content-cache :file [:call-site, :abiname, ctx:toolchain:compiler, ctx:toolchain:link-flags, :additional-flags]
 
-        file = fcache <| seq ^[
-            fs:create-dir <| Path:parent :file
-            (run (String:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) context:toolchain:compiler
-                ^context:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag)
-            # Make symlinks
-            !Array:from <| Iter:map-all (fn (MapEntry: :to :from) -> {
-                path = Path:join (Path:parent :file) :to
-                !if (fs:exists :path) () (exec ln -sf :from :path):complete
-            }) :links
-            :file
-        ]
+    file = fcache {
+        fs:create-dir <| Path:parent :file
+        (run (String:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) ctx:toolchain:compiler
+            ^ctx:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag)
+        # Make symlinks
+        Array:from <| Iter:map (fn (std:MapEntry: :to :from) -> {
+            path = Path:join (Path:parent :file) :to
+            std:if (fs:exists :path) () (exec ln -sf :from :path |>:complete)
+        }) :links
+        :file
+    }
 
-        links = !Array:from <| Iter:map-all (fn (MapEntry: :to _) -> Path:join (Path:parent :file) :to) :links
+    links = Array:from <| Iter:map (fn (std:MapEntry: :to _) -> Path:join (Path:parent :file) :to) :links
 
-        {
-            file
-            impl = [:file,^mod:runtime]
-            runtime = [^mod:runtime]
-            runtime-if-used = [:file,^:links]
-            ^!if :include-headers { import {header-deps,header-dirs} = :mod } {}
-            compile-commands = mod:compile-commands
-        }
+    {
+        file
+        impl = [:file,^mod:runtime]
+        runtime = [^mod:runtime]
+        runtime-if-used = [:file,^:links]
+        ^!std:if :include-headers { std:import {header-deps,header-dirs} = :mod } {}
+        compile-commands = mod:compile-commands
     }
 }
 
-rename = fn :context :f :name -> !match :name ^[
+rename = context-fn :ctx :f :name -> match :name [
     exact-name :name -> :name
-    :name -> context:toolchain:target::f :name
+    :name -> ctx:toolchain:target::f :name
 ]
-
-call-site = fn: -> {
-    p = !error:catch (fn _ -> script:dir:) (dynamic script:path):
-    fn :context -> !Path:relative context:project-root :p
-}
 
 ## Create an executable module from a module.
 ##
@@ -684,20 +716,16 @@ call-site = fn: -> {
 ## The `config` includes:
 ## * `String :name` - the name of the executable
 ## * `Module :mod` - the module to make into an executable
-## * `optional (Function :compile-flags)` - the compile flags generating function
-## * `optional (Function :link-flags)` - the link flags generating function
-exe = fn {
+## * `optional (Array :compile-flags)` - additional compile flags to use
+## * `optional (Array :link-flags)` - additional link flags to use
+exe = fn (source = srcpath :source) {
     name = String :name
-    module = Module :module
-    compile-flags = optional (Function :compile-flags)
-    link-flags = optional (Function :link-flags)
+    module
+    compile-flags = default (Array :compile-flags) as []
+    link-flags = default (Array :link-flags) as []
 } -> {
-    flags = {compile-flags, link-flags}
-    site = call-site:
-    Module: <| fn :context -> {
-        {context,extra-link-flags} = eval-flags :flags :context
-        Module: :mod = link :site (rename :context exe-name :name) :module :extra-link-flags executable Bool:false
-        mod :context
+    eval-flags {compile-flags,link-flags} <| fn :extra-link-flags -> {
+        link :source (rename exe-name :name) :module :extra-link-flags executable Bool:false
     }
 }
 
@@ -708,30 +736,22 @@ exe = fn {
 ## The `config` includes:
 ## * `String :name` - the name of the library
 ## * `Module :mod` - the module to make into a library
-## * `optional (Function :compile-flags)` - the compile flags generating function
-## * `optional (Function :link-flags)` - the link flags generating function
+## * `optional (Array :compile-flags)` - additional compile flags to use
+## * `optional (Array :link-flags)` - additional link flags to use
 ## * `optional (String :abi-version)` - the abi version of the dynamic library
 ##   This is used to determine file names and set binary properties. It must be a string of the form
 ##   `X[.Y[.Z]]`, where `X`, `Y`, and `Z` are non-negative integers.
-dynamic-library = fn {
+dynamic-library = fn (source = srcpath :source) {
     name = String :name
-    module = Module :module
-    compile-flags = default (Function :compile-flags) as (fn _ -> [])
-    link-flags = optional (Function :link-flags)
-    abi-version = optional (String :abi-version)
+    module
+    compile-flags = default (Array :compile-flags) as []
+    link-flags = default (Array :link-flags) as []
+    abi-version = std:optional (String :abi-version)
 } -> {
     # Must always have -fPIC when compiling code in a shared library.
-    flags = {
-        compile-flags = fn :e -> [^compile-flags :e,-fPIC]
-        link-flags
-    }
-    abi-version = default :abi-version as ()
-    site = call-site:
-    Module: <| fn :context -> {
-        {context,extra-link-flags} = eval-flags :flags :context
-        Module: :mod = (link ^{abi-version} :site (rename :context dynamic-library-name :name)
-            :module [-shared,^:extra-link-flags] "dynamic library" Bool:true)
-        mod :context
+    compile-flags = [^:compile-flags,-fPIC]
+    eval-flags {compile-flags,link-flags} <| fn :extra-link-flags -> {
+        link ^{abi-version} :source (rename dynamic-library-name :name) :module [-shared,^:extra-link-flags] "dynamic library" Bool:true
     }
 }
 
@@ -742,30 +762,29 @@ dynamic-library = fn {
 ## The `config` includes:
 ## * `String :name` - the name of the library
 ## * `Module :mod` - the module to make into a library
-## * `optional (Function :compile-flags)` - the compile flags generating function
-static-library = fn {
+## * `optional (Array :compile-flags)` - additional compile flags to use
+static-library = context-fn :ctx (source = srcpath :source) {
     name = String :name
-    module = Module: :mod
-    compile-flags = optional (Function :compile-flags)
+    module
+    compile-flags = default (Array :compile-flags) as []
 } -> {
-    flags = {compile-flags}
-    site = call-site:
-    Module: <| fn :context -> {
-        {context,^_} = eval-flags :flags :context
-        mod = mod :context
+    eval-flags {compile-flags} <| fn _ -> {
+        Module: :mod = :module
 
-        site = site :context
-        filename = rename :context static-library-name :name
-        file = Path:join Path:new: :site :filename
+        call-site = Path:relative ctx:project-root :source
 
-        [:file,:fcache] = cached-path context:options:file-content-cache :file [:site, :filename, context:toolchain:archiver]
+        filename = rename static-library-name :name
+        file = Path:join Path:new: :call-site :filename
 
-        file = fcache <| seq ^[
+        [:file,:fcache] = cached-path ctx:options:file-content-cache :file [:call-site, :filename, ctx:toolchain:archiver]
+
+        file = fcache {
             fs:create-dir <| Path:parent :file
-            run (String:format "creating static library {}" :filename) context:toolchain:archiver -crs :file ^mod:impl
+            run (String:format "creating static library {}" :filename) ctx:toolchain:archiver -crs :file ^mod:impl
             :file
-        ]
-        {
+        }
+
+        Module: {
             file
             impl = [:file]
             runtime = mod:runtime
@@ -776,41 +795,35 @@ static-library = fn {
     }
 }
 
-## Get the output of a Module, using the given configuration map.
+## Get the output of a Module, using the given configuration.
 ##
-## Arguments: `(Map :config) (Module :mod)`
+## Arguments: `(Map :config) :module`
 ##
 ## The `config` includes:
-## * `Path project-root` (required) - the project root directory, in which all source files to be
+## * `Path :project-root` (required) - the project root directory, in which all source files to be
 ##   compiled must exist. This is used so debug info can contain the relative directories of the
 ##   files.
-## * `toolchain` - the toolchain to use, using the default toolchain if unspecified.
-## * `options` - a map of options affecting behavior, including:
-##   * `file-content-cache` - if present, outputs will be cached based on file content in addition
+## * `:toolchain` - the toolchain to use, using the default toolchain if unspecified.
+## * `:options` - a map of options affecting behavior, including:
+##   * `:file-content-cache` - if present, outputs will be cached based on file content in addition
 ##     to the compile flags. For example, if you compile, change a file, compile again, and then
 ##     revert the change, no recompilation will occur because there will already be a compiled
 ##     output in the cache. This is most useful if switching between branches/commits often.
 ##
-## Note that if `file-content-cache` is not specified, `exe`/`dynamic-library`/`static-library`
+## The configuration will be used to create the ergo-cpp context with the same keys, and this
+## context will be used to evaulate `module`. Any additional unrecognized keys will be present as a
+## map under the `extra` key in the context.
+##
+## If `file-content-cache` is not specified, `exe`/`dynamic-library`/`static-library`
 ## outputs _must_ have unique names on a per-script basis. This is because the caching relies on the
 ## script path and name when determining the cache target file.
-## 
-## All additional values in the configuration map will be passed (as a map) to `compile-flags` and
-## `link-flags` functions in other functions, if specified.
 get-output = fn {
     project-root = Path :project-root
-    toolchain = optional (Map :tc)
+    toolchain = default (Map :toolchain) as (toolchain {})
     options = default (Map :options) as {}
     ^:extra
-} (Module: :mod) -> {
-    toolchain = !if :tc :tc (toolchain {})
-    mod {project-root, toolchain, options, extra}
-}
-
-string-escape = fn :s -> {
-    s = String:join "\\\"" <| String:split "\"" :s
-    s = String:join "\\\\" <| String:split "\\" :s
-    :s
+} :module -> {
+    !bind (Module: :v -> :v) <| std:dynamic:eval { ::context-key = { project-root, toolchain, options, extra } } :module
 }
 
 ## Create a compile_commands.json file for all compile commands in the outputs.
@@ -823,13 +836,10 @@ string-escape = fn :s -> {
 compile-commands = fn ^:outputs -> {
     path = Path:new:
     file = Path:join :path compile_commands.json
-    to-entry = fn { arguments, file, out } -> {
-        args = String:join "," <| Iter:map (fn :a -> String:format "\"{}\"" <| string-escape :a) :arguments
-        String:format ^{file, out, args} "{{ \"directory\": \"/\",\n \"file\": \"{file}\",\n \"output\": \"{out}\",\n \"arguments\": [{args}]\n }}"
-    }
-    commands = Iter:unique <| Iter:flatten <| Iter:map (fn :o -> o:compile-commands) :outputs
-    content = String:format "[{}]" <| String:join ",\n" <| Iter:map :to-entry :commands
-    seq (fs:create-dir :path) (fs:write :file :content) :file
+    commands = !Array:from <| Iter:unique <| Iter:flatten <| Iter:map (fn :o -> o:compile-commands) :outputs
+    fs:create-dir :path
+    fs:write :file <| std:json:stringify :commands
+    :file
 }
 
 ## Execute an output.
@@ -842,23 +852,23 @@ compile-commands = fn ^:outputs -> {
 ## * `^:kwargs` - forwarded to `exec`
 ##
 ## The output should be obtained with `get-output`.
-## The output must provide an executable `file` key in the result, like `exe` does.
+## The output must provide an executable `file` key in the result (like `exe` does).
 ##
 ## Returns the result of running `exec`.
-exec-output = fn :ret ^:args ^{runtime-uses = default :rt-uses as [], ^:kwargs} -> {
+exec-output = fn :ret (runtime-uses = default :rt-uses as []) ^:args -> {
     runtime = Iter:flatten [ret:runtime, Iter:map (fn :m -> m:runtime) :rt-uses | Iter:flatten]
-    libpath = cache <| Path:with-output <| fn :libpath -> seq ^[
+    libpath = cache <| Path:with-output <| fn :libpath -> {
         fs:create-dir :libpath # Ensure path exists if empty
-        !Array:from <| Iter:map (fn :f -> fs:copy :f :libpath) :runtime
-    ]
-    rt-env = !match env:os ^[
+        Array:from <| Iter:map (fn :f -> fs:copy :f :libpath) :runtime
+    }
+    rt-env = match env:os [
         windows -> { PATH = :libpath }
         macos -> { DYLD_LIBRARY_PATH = :libpath }
         # Use preloaded libraries when possible; this avoids issues with filenames not
         # matching linked dependency names (from, e.g., SONAME)
-        linux -> { LD_PRELOAD = String:join ":" <| Iter:map (Function:partial String:format "{}") :runtime }
+        linux -> { LD_PRELOAD = String:join ":" <| Iter:map (std:Function:partial String:format "{}") :runtime }
     ]
-    exec ^{ ^:kwargs, env = { ^default kwargs:env as {}, ^:rt-env } } ret:file ^:args
+    exec ret:file ^:args (env = { ^default args:keyed:env as {}, ^:rt-env })
 }
 
 ## The ergo-cpp library.
@@ -869,11 +879,14 @@ exec-output = fn :ret ^:args ^{runtime-uses = default :rt-uses as [], ^:kwargs} 
 ## modules can depend on other modules. To evaluate a module (thus creating it concretely), use
 ## `get-output` with the configuration you desire.
 ##
+## # context
+## {{doc self:context}}
+##
 ## # Modules
-## {{doc:modules :self type}}
+## {{std:doc:modules :self type}}
 ##
 ## # Functions
-## {{(doc:functions :self module all-files header-paths
+## {{(std:doc:functions :self module all-files header-paths
 ##    compiled-module
 ##    exe dynamic-library static-library exact-name
 ##    get-output toolchain env-toolchain
@@ -882,8 +895,9 @@ exec-output = fn :ret ^:args ^{runtime-uses = default :rt-uses as [], ^:kwargs} 
     ## Types used in the library values.
     ##
     ## # Types
-    ## {{doc:modules :self Module}}
+    ## {{std:doc:modules :self Module}}
     type = {Module}
+    context
     module
     compiled-module
     exe
