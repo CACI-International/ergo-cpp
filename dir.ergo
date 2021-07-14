@@ -331,8 +331,7 @@ set-file-deps = fn ^{ banned-headers } :toolchain (Path :file) :untracked-compil
     }
     # existing files depend on the result of fs:track, otherwise look in known-headers
     banned-check = std:if :banned-headers (fn :x -> std:if banned-headers::x { std:Error: (source=:file) <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
-    # TODO Iter error catching
-    depends = !Array:from <| Iter:map (fn :dep -> !std:eval {
+    Array :depends = Array:from <| Iter:no-errors <| Iter:map (fn :dep -> !std:eval {
         std:if (fs:exists <| Path:join :dep) (fs:track :dep) {
             match known-headers::dep [
                 std:Unset -> banned-check :dep
@@ -519,15 +518,19 @@ module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
     uses = match-uses :uses
     compile-flags = default (std:Function :compile-flags) as (fn _ -> [])
 } -> {
-    files = Iter:map (fn :f -> Path:join :relative-dir :f) :files
-    headers = Iter:map (fn (std:MapEntry: :to :from) -> std:MapEntry: :to (Path:join :relative-dir :from)) :headers
+    files = !Iter:map (fn :f -> !fs:track <| Path:join :relative-dir :f) :files
+    headers-spec = :headers
+    headers = !Iter:map (fn (std:MapEntry: :to :from) -> std:MapEntry: :to (!fs:track <| Path:join :relative-dir :from)) :headers
     evaled = eval-uses :uses
 
-    header-dir = cache <| Path:with-output <| fn :dir -> {
-        fs:create-dir :dir # Ensure path exists if empty
-        # Force the array so the inner values are the results of `fs:copy`, which will include
-        # the `fs:track` identities (so if a header changes, the header-dir is rebuilt).
-        !Array:from <| Iter:map (fn (std:MapEntry: :to :from) -> fs:copy (!fs:track :from) (Path:join :dir :to)) :headers
+    header-dir = {
+        [:dir,:hdcache] = cached-path ctx:options:cache-policy Path:new: [:headers-spec, :relative-dir]
+        hdcache {
+            fs:remove :dir # Clear any existing directory
+            fs:create-dir :dir # Ensure path exists if empty
+            Array:from <| Iter:map (fn (std:MapEntry: :to :from) -> fs:copy :from (Path:join :dir :to)) :headers
+            :dir
+        }
     }
 
     header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) evaled:header-dirs
@@ -537,7 +540,7 @@ module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
 
     # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
     # ban internal header-deps so that if they are used, an error will occur about exposing a private module
-    mod-header-deps = !Array:from <| Iter:map (fn (std:MapEntry: :to :from) -> {
+    mod-header-deps = !Iter:map (fn (std:MapEntry: :to :from) -> {
         std:MapEntry: (path-to-include :to) (
             !std:eval <| set-file-deps (banned-headers = evaled:header-deps:internal)
                 ctx:toolchain :from [-I,:header-dir] :compile-flags evaled:header-deps:external
@@ -545,7 +548,7 @@ module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
     }) :headers
     header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
 
-    compiles = !Array:from <| Iter:map (fn :f -> (compile ctx:options:cache-policy ctx:toolchain ctx:project-root
+    compiles = !Iter:map (fn :f -> (compile ctx:options:cache-policy ctx:toolchain ctx:project-root
             (!std:eval <| set-file-deps ctx:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags)
         ) :files
     objects = Iter:map (fn :c -> c:object) :compiles
@@ -644,7 +647,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
     {abi-flags,abiname,links,^_} = match :abi-version [
         String :s -> {
             max-version = String:split . :s |>:0
-            compat-version = match :os [
+            String :compat-version = match :os [
                 macos -> {
                     String:format "{}.dylib" :prefix = :name
                     String:format "{}.{}.dylib" :prefix :max-version
@@ -666,7 +669,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
                 # XXX For now assume windows is using something gnuish
                 _ -> [String:format "-Wl,-soname,{}" :compat-version]
             ]
-            abiname = match :os [
+            String :abiname = match :os [
                 macos -> {
                     String:format "{}.dylib" :prefix = :name
                     String:format "{}.{}.dylib" :prefix :s
@@ -675,7 +678,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
             ]
             links = {
                 ::name = :compat-version
-                ::compat-version = match :abiname [(!:compat-version) -> std:Unset:, std:Function:pass]
+                ::compat-version = !std:eval <| match :abiname [(!:compat-version) -> std:Unset:, std:Function:pass]
             }
         }
         _ -> {
