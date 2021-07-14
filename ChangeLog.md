@@ -12,6 +12,8 @@
   writes expressions (that optionally use `context`) which evaluate to a
   `Module` type, doing any necessary value- or context-dependent work prior to
   creating the `Module`.
+* `compile-flags` and `link-flags` arguments now are just arrays; if the context
+  is needed, use `context`.
 
 ## 0.8.3  -- 2021-06-23
 * Fix a bug with symbolic link creation.
