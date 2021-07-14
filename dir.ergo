@@ -516,7 +516,7 @@ module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
     files = default (Array :files) as []
     headers = default (Map :headers) as {}
     uses = match-uses :uses
-    compile-flags = default (std:Function :compile-flags) as (fn _ -> [])
+    compile-flags = default (Array :compile-flags) as []
 } -> {
     files = !Iter:map (fn :f -> !fs:track <| Path:join :relative-dir :f) :files
     headers-spec = :headers
@@ -536,7 +536,6 @@ module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
     header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) evaled:header-dirs
 
     includes = to-includes header-dirs:internal
-    compile-flags = compile-flags ctx:extra
 
     # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
     # ban internal header-deps so that if they are used, an error will occur about exposing a private module
