@@ -108,12 +108,13 @@ toolchain = fn {
     lipo = env:path-search :lipo
 
     detect = fn :filename -> {
-        result = cache {
+        result = std:by-content <| cache {
             file = Path:join :script-dir detection :filename
             output = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -imacros cassert -E -P :file |>:stdout
-            String:from :output | String:trim | String:split "\"" |>:1
+            String:format '"{}"' :result _ = String:trim <| String:from :output
+            :result
         }
-        log debug <| String:format "detection file `{}` yielded `{}`" :filename :result
+        log:debug <| String:format "detection file `{}` yielded `{}`" :filename :result
         :result
     }
 
@@ -233,37 +234,41 @@ env-toolchain = fn: -> toolchain {
 
 ## Handles caching of the given path.
 ##
-## Returns `[path, getter]`, where:
+## Returns `[:path, :getter]`, where:
 ## * `path` is the same file path as the input, identified based on content if `file-content-cache` is
 ## true, and otherwise based on `depends`.
 ## * `getter` is the function to use to retrieve the path when given the means of writing the path.
 ##   * I.e. you use the returned `path` in some expression that will write to it, and pass that
 ##   expression to `getter`.
-cached-path = fn :file-content-cache :path :depends -> {
-    std:if :file-content-cache [:path,:cache] {
-        # We want the path to be explicitly cached on the deps.
-        out = cache <| std:variable ^{ depends } :path
-        get-value = fn :v -> {
-            # Get the file which tracks the last writer
-            last-writer-file = cache <| std:variable (depends = [last-writer, :out]) Path:new:
-            # Create a string which tracks the argument
-            me = !String:from <| cache <| std:variable (depends = :v) Path:new:
-            # Read the last writer, if any.
-            last-writer = !String:from (std:if (fs:exists :last-writer-file) (fs:read :last-writer-file) "")
-            # Shortcut and return `out` if the last writer was this value.
-            # The returned value should have the same identity as `v`
-            std:variable (depends = :v) <| match :last-writer [
-                !:me -> :out
-                _ -> {
-                    fs:remove :last-writer-file
-                    :v
-                    fs:write :last-writer-file :me
-                    :out
-                }
-            ]
+cached-path = fn :cache-policy :path :depends -> {
+    match :cache-policy [
+        content -> [:path,:cache]
+        configuration -> {
+            # We want the path to be explicitly cached on the deps.
+            out = cache <| !std:variable ^{ depends } :path
+            get-value = fn :v -> {
+                # Get the file which tracks the last writer
+                last-writer-file = cache <| !std:variable (depends = [last-writer, :out]) Path:new:
+                # Create a string which tracks the argument
+                String :me = std:identity :v
+                # Read the last writer, if any.
+                String :last-writer = String:from (std:if (fs:exists :last-writer-file) (fs:read :last-writer-file) "")
+                # Shortcut and return `out` if the last writer was this value.
+                # The returned value should have the same identity as `v`
+                Path :p = match :last-writer [
+                    !:me -> :out
+                    _ -> {
+                        fs:remove :last-writer-file
+                        :v
+                        fs:write :last-writer-file :me
+                        :out
+                    }
+                ]
+                !std:variable (depends = :v) :p
+            }
+            [:out,:get-value]
         }
-        [:out,:get-value]
-    }
+    ]
 }
 
 toolchain-compile-flags = fn :toolchain -> [
@@ -273,20 +278,21 @@ toolchain-compile-flags = fn :toolchain -> [
 
 ## Compile a file with the given flags.
 ## The project-root argument is used to ensure the file paths in compiled debug sections are user-friendly.
-compile = fn ^{ file-content-cache } :toolchain :project-root :file :untracked-flags ^:flags -> {
-    proj-path = Path:relative :project-root :file
+compile = fn :cache-policy :toolchain :project-root :file :untracked-flags ^:flags -> {
+    proj-path = !Path:relative :project-root :file
     out = Path:join Path:new: <| String:format "{}.o" :proj-path
+    flags = flags:positional
 
-    [:out,:ocache] = cached-path :file-content-cache :out [:proj-path, toolchain:compiler, toolchain-compile-flags :toolchain, :flags]
+    [:out,:ocache] = cached-path :cache-policy :out [:proj-path, toolchain:compiler, !toolchain-compile-flags :toolchain, :flags]
 
     {
         object = ocache {
             fs:create-dir <| Path:parent :out
-            run (String:format "compiling {}" :file) (env = { PATH = env:get PATH }) toolchain:compiler ^(toolchain-compile-flags :toolchain) -c -o :out ^(std:variable :untracked-flags) ^:flags :file
+            run (String:format "compiling {}" :file) (env = { PATH = env:get PATH }) toolchain:compiler ^(toolchain-compile-flags :toolchain) -c -o :out ^(!std:variable :untracked-flags) ^:flags :file
             :out
         }
         compile-command = {
-            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:compiler], toolchain-compile-flags :toolchain, [-c,-o,:out], std:variable :untracked-flags, :flags, [:file]]
+            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:compiler], toolchain-compile-flags :toolchain, [-c,-o,:out], !std:variable :untracked-flags, :flags, [:file]]
             file = String:from :file
             output = String:from :out
             directory = "/"
@@ -309,29 +315,32 @@ Module = std:type:new (bind = _ -> :v -> std:Error: (source=:v) "cannot directly
 
 ## Return a file path that depends on all include dependencies, given a map of header paths to dependencies
 ## that will be used for includes that do not resolve to a file.
-set-file-deps = fn ^{ banned-headers } :toolchain :file :untracked-compile-flags :compile-flags :known-headers -> {
-    deps = (exec (env = { PATH = env:get PATH }) toolchain:compiler
-            ^(toolchain-compile-flags :toolchain) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^:untracked-compile-flags
-            ^:compile-flags :file):stdout | String:from | String:trim
-    String:format "{}: {}" _ :parts = :deps
-    # Split on continuation newlines from make syntax
-    parts = String:split "\\\n" :parts
-    # Split on spaces (XXX this will break on filenames with spaces)
-    parts = Iter:map (fn :p -> String:split " " :p) :parts | Iter:flatten
-    # Remove empty parts
-    parts = Iter:filter (fn :v -> match :v ["" -> Bool:false,_ -> Bool:true]) :parts
-    # Cache based on the file, compiler, and compile flags
-    parts = cache <| std:variable (depends = [file-deps, !fs:track :file, toolchain:compiler, toolchain-compile-flags :toolchain, :compile-flags]) :parts
+set-file-deps = fn ^{ banned-headers } :toolchain (Path :file) :untracked-compile-flags :compile-flags :known-headers -> {
+    deps = cache {
+        deps = (exec (env = { PATH = env:get PATH }) toolchain:compiler
+                 ^(!toolchain-compile-flags :toolchain) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
+                 ^:compile-flags (!fs:track :file)):stdout | String:from | String:trim
+        String:format "{}: {}" _ :parts = :deps
+        (:parts
+           # Split on continuation newlines from make syntax
+           | String:split "\\\n"
+           # Split on spaces (XXX this will break on filenames with spaces)
+           | Iter:map (fn :p -> String:split " " :p) | Iter:flatten
+           # Remove empty parts
+           | Iter:filter (fn :v -> match :v ["" -> Bool:false,_ -> Bool:true]))
+    }
     # existing files depend on the result of fs:track, otherwise look in known-headers
     banned-check = std:if :banned-headers (fn :x -> std:if banned-headers::x { std:Error: (source=:file) <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
-    depends = !Iter:map (fn :dep -> !std:eval {
+    # TODO Iter error catching
+    depends = !Array:from <| Iter:map (fn :dep -> !std:eval {
         std:if (fs:exists <| Path:join :dep) (fs:track :dep) {
             match known-headers::dep [
                 std:Unset -> banned-check :dep
                 std:Function:pass
             ]
         }
-    }) :parts
+    }) :deps
+    depends = [:depends, !fs:track :file, toolchain:compiler, !toolchain-compile-flags :toolchain, :compile-flags]
     std:variable ^{ depends } :file
 }
 
@@ -368,7 +377,7 @@ all-files = fn (dir = srcdir :dir) -> glob-src ^{dir} *.cpp
 header-paths = {
     inner = std:Function:recursive <| fn :self :descr -> {
         match :descr [
-            all -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name :a)) :a) <| glob-src (source=:descr) *.h
+            all -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name :a)) :a) <| glob-src (dir=:descr) *.h
             Array :files -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name (Path:join :a))) (Path:join :a)) :files
             Map :dirs -> {
                 Iter:flatten <| Iter:map (fn (std:MapEntry: :key :val) -> {
@@ -432,8 +441,8 @@ eval-when = fn :when :val -> !std:eval :val
 context = std:dynamic:get :context-key
 
 context-fn = pat :ctx ^:rest -> :v -> {
-    bind :ctx <| !eval-when :v <| std:dynamic:get :context-key
-    bind :rest :v
+    bind :ctx <| !eval-when :v :context
+    bind (fn ^!:rest -> ()) :v
 }
 
 ## Evaluate uses.
@@ -509,7 +518,7 @@ module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
     headers = default (Map :headers) as {}
     uses = match-uses :uses
     compile-flags = default (std:Function :compile-flags) as (fn _ -> [])
-} -> Module: {
+} -> {
     files = Iter:map (fn :f -> Path:join :relative-dir :f) :files
     headers = Iter:map (fn (std:MapEntry: :to :from) -> std:MapEntry: :to (Path:join :relative-dir :from)) :headers
     evaled = eval-uses :uses
@@ -528,7 +537,7 @@ module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
 
     # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
     # ban internal header-deps so that if they are used, an error will occur about exposing a private module
-    mod-header-deps = !Iter:map (fn (std:MapEntry: :to :from) -> {
+    mod-header-deps = !Array:from <| Iter:map (fn (std:MapEntry: :to :from) -> {
         std:MapEntry: (path-to-include :to) (
             !std:eval <| set-file-deps (banned-headers = evaled:header-deps:internal)
                 ctx:toolchain :from [-I,:header-dir] :compile-flags evaled:header-deps:external
@@ -536,13 +545,13 @@ module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
     }) :headers
     header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
 
-    compiles = !Iter:map (fn :f -> (compile (file-content-cache = ctx:options:file-content-cache)
-            ctx:toolchain ctx:project-root
-            (!std:eval <| set-file-deps ctx:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags)) :files
+    compiles = !Array:from <| Iter:map (fn :f -> (compile ctx:options:cache-policy ctx:toolchain ctx:project-root
+            (!std:eval <| set-file-deps ctx:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags)
+        ) :files
     objects = Iter:map (fn :c -> c:object) :compiles
     compile-commands = Iter:map (fn :c -> c:compile-command) :compiles
 
-    module-result evaled:uses { impl = :objects, runtime = [], compile-commands, header-dirs, header-deps }
+    Module: <| module-result evaled:uses { impl = :objects, runtime = [], compile-commands, header-dirs, header-deps }
 }
 
 ## Create a module that is already compiled.
@@ -610,7 +619,10 @@ exact-name = {
     key = "ergo-cpp:exact-name"
     match:value [
         fn :name -> std:meta:set :name :key ()
-        pat :out -> :name -> std:if (std:meta:get :name :key) (bind :out :name) (std:Error: (source=:name) "not an exact-name")
+        pat :out -> :name -> {
+            std:if (std:meta:get :name :key) (bind :out :name) (std:Error: (source=:name) "not an exact-name")
+            ()
+        }
     ]
 }
 
@@ -631,7 +643,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
     # Handle abi version specifics
     {abi-flags,abiname,links,^_} = match :abi-version [
         String :s -> {
-            String:format "{}.{}" :max-version _ = :s
+            max-version = String:split . :s |>:0
             compat-version = match :os [
                 macos -> {
                     String:format "{}.dylib" :prefix = :name
@@ -678,14 +690,14 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
     subdir = Path:join Path:new: :call-site
     file = Path:join :subdir :abiname
 
-    [:file,:fcache] = cached-path ctx:options:file-content-cache :file [:call-site, :abiname, ctx:toolchain:compiler, ctx:toolchain:link-flags, :additional-flags]
+    [:file,:fcache] = cached-path ctx:options:cache-policy :file [:call-site, :abiname, ctx:toolchain:compiler, ctx:toolchain:link-flags, :additional-flags]
 
     file = fcache {
         fs:create-dir <| Path:parent :file
         (run (String:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) ctx:toolchain:compiler
             ^ctx:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag)
         # Make symlinks
-        Array:from <| Iter:map (fn (std:MapEntry: :to :from) -> {
+        Iter:map (fn (std:MapEntry: :to :from) -> {
             path = Path:join (Path:parent :file) :to
             std:if (fs:exists :path) () (exec ln -sf :from :path |>:complete)
         }) :links
@@ -697,7 +709,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
     {
         file
         impl = [:file,^mod:runtime]
-        runtime = [^mod:runtime]
+        runtime = mod:runtime
         runtime-if-used = [:file,^:links]
         ^!std:if :include-headers { std:import {header-deps,header-dirs} = :mod } {}
         compile-commands = mod:compile-commands
@@ -776,7 +788,7 @@ static-library = context-fn :ctx (source = srcpath :source) {
         filename = rename static-library-name :name
         file = Path:join Path:new: :call-site :filename
 
-        [:file,:fcache] = cached-path ctx:options:file-content-cache :file [:call-site, :filename, ctx:toolchain:archiver]
+        [:file,:fcache] = cached-path ctx:options:cache-policy :file [:call-site, :filename, ctx:toolchain:archiver]
 
         file = fcache {
             fs:create-dir <| Path:parent :file
@@ -795,6 +807,12 @@ static-library = context-fn :ctx (source = srcpath :source) {
     }
 }
 
+Options = pat :opts -> default {
+    cache-policy = default :cache-policy as configuration
+} as {} -> {
+    bind :opts { cache-policy }
+}
+
 ## Get the output of a Module, using the given configuration.
 ##
 ## Arguments: `(Map :config) :module`
@@ -805,25 +823,27 @@ static-library = context-fn :ctx (source = srcpath :source) {
 ##   files.
 ## * `:toolchain` - the toolchain to use, using the default toolchain if unspecified.
 ## * `:options` - a map of options affecting behavior, including:
-##   * `:file-content-cache` - if present, outputs will be cached based on file content in addition
-##     to the compile flags. For example, if you compile, change a file, compile again, and then
-##     revert the change, no recompilation will occur because there will already be a compiled
-##     output in the cache. This is most useful if switching between branches/commits often.
+##   * :cache-policy` - may be one of the following:
+##      * `configuration` (default) - Outputs are cached based on compilation flags.
+##        `exe`/`dynamic-library`/`static-library` outputs _must_ have unique names on a per-script
+##        basis. This is because the caching relies on the script path and name when determining the
+##        cache target file.
+##      * `content` - Outputs are cached based on compilation flags and file content. For example,
+##        if you compile, change a file, compile again, and then revert the change, no recompilation
+##        will occur because there will already be a compiled output in the cache. This is most
+##        useful if switching between branches/commits often.
 ##
 ## The configuration will be used to create the ergo-cpp context with the same keys, and this
 ## context will be used to evaulate `module`. Any additional unrecognized keys will be present as a
 ## map under the `extra` key in the context.
-##
-## If `file-content-cache` is not specified, `exe`/`dynamic-library`/`static-library`
-## outputs _must_ have unique names on a per-script basis. This is because the caching relies on the
-## script path and name when determining the cache target file.
 get-output = fn {
     project-root = Path :project-root
     toolchain = default (Map :toolchain) as (toolchain {})
-    options = default (Map :options) as {}
+    options = Options :options
     ^:extra
 } :module -> {
-    !bind (Module: :v -> :v) <| std:dynamic:eval { ::context-key = { project-root, toolchain, options, extra } } :module
+    Module: :v = std:dynamic:eval { ::context-key = { project-root, toolchain, options, extra } } :module
+    :v
 }
 
 ## Create a compile_commands.json file for all compile commands in the outputs.
@@ -836,7 +856,7 @@ get-output = fn {
 compile-commands = fn ^:outputs -> {
     path = Path:new:
     file = Path:join :path compile_commands.json
-    commands = !Array:from <| Iter:unique <| Iter:flatten <| Iter:map (fn :o -> o:compile-commands) :outputs
+    commands = !Array:from <| Iter:unique <| Iter:flatten <| Iter:map (fn :o -> o:compile-commands) outputs:positional
     fs:create-dir :path
     fs:write :file <| std:json:stringify :commands
     :file

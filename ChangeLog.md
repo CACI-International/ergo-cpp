@@ -1,5 +1,18 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Updated to support ergo-1.0.0-rc.0.
+* Expose the `context` value to retrieve the current compilation context.
+
+### Breaking Changes
+* Change `options:file-content-cache` to instead be `options:cache-policy`, with
+  options of `configuration` and `content`.
+* Change modules to store arbitrary values rather than a function that takes the
+  context. This changes the paradigm of creating modules to one where a user
+  writes expressions (that optionally use `context`) which evaluate to a
+  `Module` type, doing any necessary value- or context-dependent work prior to
+  creating the `Module`.
+
 ## 0.8.3  -- 2021-06-23
 * Fix a bug with symbolic link creation.
 * Correct `static-library-name` to return a name with a `lib` prefix for
