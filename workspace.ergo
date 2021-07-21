@@ -40,7 +40,17 @@ parse-env-flags = fn :var -> {
 ## * `compiler` - The resolved C++ compiler
 ## * `c-compiler` - The resolved C compiler
 ## * `archiver` - The resolved archiver program
+## * `ranlib` - The resolved ranlib program
+## * `object-copy` - The resolved object-copy program
 ## * `object-dump` - The resolved object-dump program
+## * `addr2line` - The resolved addr2line program
+## * `dlltool` - The resolved dlltool program
+## * `nm` - The resolved nm program
+## * `readelf` - The resolved readelf program
+## * `strip` - The resolved strip program
+## * `libtool` - The resolved libtool program
+## * `install-name-tool` - The resolved install-name-tool program
+## * `lipo` - The resolved lipo program
 ## * `compile-flags` - The compile flags to use with the C++ compiler
 ## * `c-compile-flags` - The compile flags to use with the C compiler
 ## * `link-flags` - The link flags to use when linking
@@ -65,7 +75,18 @@ toolchain = fn {
     compiler = default :compiler as c++
     c-compiler = default :c-compiler as cc
     archiver = default :archiver as ar
+    ranlib = default :ranlib as ranlib
+    object-copy = default :object-copy as objcopy
     object-dump = default :object-dump as objdump
+    addr2line = default :addr2line as addr2line
+    dlltool = default :dlltool as dlltool
+    nm = default :nm as nm
+    readelf = default :readelf as readelf
+    strip = default :strip as strip
+    libtool = default :libtool as libtool
+    install-name-tool = default :install-name-tool as install_name_tool
+    lipo = default :lipo as lipo
+    
     compile-flags = default :compile-flags as []
     c-compile-flags = default :c-compile-flags as []
     link-flags = default :link-flags as []
@@ -73,7 +94,17 @@ toolchain = fn {
     compiler = env:path-search :compiler
     c-compiler = env:path-search :c-compiler
     archiver = env:path-search :archiver
+    ranlib = env:path-search :ranlib
+    object-copy = env:path-search :object-copy
     object-dump = env:path-search :object-dump
+    addr2line = env:path-search :addr2line
+    dlltool = env:path-search :dlltool
+    nm = env:path-search :nm
+    readelf = env:path-search :readelf
+    strip = env:path-search :strip
+    libtool = env:path-search :libtool
+    install-name-tool = env:path-search :install-name-tool
+    lipo = env:path-search :lipo
 
     detect = fn :filename -> {
         result = cache {
@@ -89,7 +120,18 @@ toolchain = fn {
         compiler
         c-compiler
         archiver
+        ranlib
+        object-copy
         object-dump
+        addr2line
+        dlltool
+        nm
+        readelf
+        strip
+        libtool
+        install-name-tool
+        lipo
+
         compile-flags
         c-compile-flags
         link-flags
@@ -150,16 +192,39 @@ toolchain = fn {
 ##
 ## Arguments: (none)
 ## 
-## This toolchain is derived from the environment variables `CXX`, `CC`, `AR`, `CXXFLAGS`, `CFLAGS`, `LDFLAGS`, and `OBJDUMP`.
-## If `CXX` is not set, `c++` is used.
-## If `CC` is not set, `cc` is used.
-## If `AR` is not set, `ar` is used.
-## If `OBJDUMP` is not set, `objdump` is used.
+## This toolchain is derived from the following environment variables:
+## * `CXX`
+## * `CC`
+## * `AR`
+## * `RANLIB`
+## * `OBJCOPY`
+## * `OBJDUMP`
+## * `ADDR2LINE`
+## * `DLLTOOL`
+## * `NM`
+## * `READELF`
+## * `STRIP`
+## * `LIBTOOL`
+## * `INSTALL_NAME_TOOL`
+## * `LIPO`
+##
+## If any of these variables are not set, the default name is used instead.
 env-toolchain = fn: -> toolchain {
-    compiler = env-or CXX c++
-    c-compiler = env-or CC cc
-    archiver = env-or AR ar
-    object-dump = env-or OBJDUMP objdump
+    compiler = env:get CXX
+    c-compiler = env:get CC
+    archiver = env:get AR
+    ranlib = env:get RANLIB
+    object-copy = env:get OBJCOPY
+    object-dump = env:get OBJDUMP
+    addr2line = env:get ADDR2LINE
+    dlltool = env:get DLLTOOL
+    nm = env:get NM
+    readelf = env:get READELF
+    strip = env:get STRIP
+    libtool = env:get LIBTOOL
+    install-name-tool = env:get INSTALL_NAME_TOOL
+    lipo = env:get LIPO
+
     compile-flags = parse-env-flags CXXFLAGS
     c-compile-flags = parse-env-flags CFLAGS
     link-flags = parse-env-flags LDFLAGS
