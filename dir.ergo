@@ -6,7 +6,7 @@ std:import { Array, Bool, Iter, Map, Path, String } = std:
 
 log = std:log:sublog c++
 
-script-dir = !Path:parent <| std:source-path ()
+script-dir = std:source:dir ()
 
 ## Return the value of an environment variable, or an alternative value if not set.
 env-or = fn :name :alternative -> default (env:get :name) as :alternative
@@ -343,23 +343,13 @@ set-file-deps = fn ^{ banned-headers } :toolchain (Path :file) :untracked-compil
     std:variable ^{ depends } :file
 }
 
-srcdir = pat :x -> match:value [
-    std:Path :p -> bind :x :p
-    :other -> bind :x <| match (std:source-path :other) [std:Unset -> std:env:current-dir, :p -> Path:parent :p]
-]
-
-srcpath = pat :x -> match:value [
-    std:Path :p -> bind :x :p
-    :other -> bind :x <| default (std:source-path :other) as std:env:current-dir
-]
-
-glob-src = fn (dir = srcdir :dir) :pattern -> fs:glob <| Path:join :dir :pattern
+glob-src = fn :dir :pattern -> fs:glob <| Path:join :dir :pattern
 
 ## Get `files` in the current script directory.
 ##
 ## The return value is suitable to be passed directly as the `files` key in the `module`
 ## configuration.
-all-files = fn (dir = srcdir :dir) -> glob-src ^{dir} *.cpp
+all-files = fn (dir = std:Path:or-source ^parent :dir) -> glob-src :dir *.cpp
 
 ## Get `headers` from a heirarchical description.
 ##
@@ -376,7 +366,7 @@ all-files = fn (dir = srcdir :dir) -> glob-src ^{dir} *.cpp
 header-paths = {
     inner = std:Function:recursive <| fn :self :descr -> {
         match :descr [
-            all -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name :a)) :a) <| glob-src (dir=:descr) *.h
+            all -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name :a)) :a) <| glob-src (default (std:source:path :descr) as std:env:current-dir) *.h
             Array :files -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name (Path:join :a))) (Path:join :a)) :files
             Map :dirs -> {
                 Iter:flatten <| Iter:map (fn (std:MapEntry: :key :val) -> {
@@ -512,7 +502,7 @@ module-result = fn :all-uses { impl, runtime, compile-commands, header-dirs, hea
 ##   its identity)
 ## * `runtime`: an array of any additional requirements of the module (inherited from used modules)
 ## * `compile-commands`: an array of compile commands to build the module and all dependent modules
-module = context-fn :ctx (relative-dir = srcdir :relative-dir) {
+module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-dir) {
     files = default (Array :files) as []
     headers = default (Map :headers) as {}
     uses = match-uses :uses
@@ -732,7 +722,7 @@ rename = context-fn :ctx :f :name -> match :name [
 ## * `Module :mod` - the module to make into an executable
 ## * `optional (Array :compile-flags)` - additional compile flags to use
 ## * `optional (Array :link-flags)` - additional link flags to use
-exe = fn (source = srcpath :source) {
+exe = fn (source = std:Path:or-source :source) {
     name = String :name
     module
     compile-flags = default (Array :compile-flags) as []
@@ -755,7 +745,7 @@ exe = fn (source = srcpath :source) {
 ## * `optional (String :abi-version)` - the abi version of the dynamic library
 ##   This is used to determine file names and set binary properties. It must be a string of the form
 ##   `X[.Y[.Z]]`, where `X`, `Y`, and `Z` are non-negative integers.
-dynamic-library = fn (source = srcpath :source) {
+dynamic-library = fn (source = std:Path:or-source :source) {
     name = String :name
     module
     compile-flags = default (Array :compile-flags) as []
@@ -777,7 +767,7 @@ dynamic-library = fn (source = srcpath :source) {
 ## * `String :name` - the name of the library
 ## * `Module :mod` - the module to make into a library
 ## * `optional (Array :compile-flags)` - additional compile flags to use
-static-library = context-fn :ctx (source = srcpath :source) {
+static-library = context-fn :ctx (source = std:Path:or-source :source) {
     name = String :name
     module
     compile-flags = default (Array :compile-flags) as []
@@ -871,7 +861,6 @@ compile-commands = fn ^:outputs -> {
 ## Keyword Arguments:
 ## * `:runtime-uses` - an array of extra module outputs whose runtime should also be used as part of
 ##   the executable's runtime
-## * `^:kwargs` - forwarded to `exec`
 ##
 ## The output should be obtained with `get-output`.
 ## The output must provide an executable `file` key in the result (like `exe` does).
