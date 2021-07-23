@@ -427,7 +427,7 @@ vis = {
 
 context-key = "ergo-cpp:context"
 
-eval-when = fn :when :val -> !std:eval :val
+eval-when = fn _ :val -> !std:eval :val
 
 ## The ergo-cpp context.
 ##
