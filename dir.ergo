@@ -14,12 +14,6 @@ env-or = fn :name :alternative -> default (env:get :name) as :alternative
 ## Run an executable as a task (counting as one task).
 run = fn :description ^:args -> task (count = 1) :description (exec ^:args):complete
 
-## Parse space-separated flags from an environment variable, if set.
-parse-env-flags = fn :var -> {
-    strs = String:split " " (env-or :var "")
-    Array:from <| Iter:filter (fn :v -> match :v ["" -> Bool:false, _ -> Bool:true]) :strs
-}
-
 # TODO divorce the linking/native/binutils stuff from c/c++, separate c and c++ into separate
 # libraries
 
@@ -31,8 +25,21 @@ parse-env-flags = fn :var -> {
 ## * `compiler` - The compiler to use (as a binary name or path), defaulting to `c++`.
 ## * `c-compiler` - The C compiler to use (as a binary name or path), defaulting to `cc`.
 ## * `archiver` - The archiver to use (as a binary name or path), defaulting to `ar`.
+## * `ranlib` - The ranlib binary to use (as a binary name or path), defaulting to `ranlib`.
+## * `object-copy` - The object-copy binary to use (as a binary name or path), defaulting to
+## `objcopy`.
 ## * `object-dump` - The tool to inspect generated object files (as a binary or path), defaulting to
 ##   `objdump`.
+## * `addr2line` - The addr2line binary to use (as a binary name or path), defaulting to
+## `addr2line`.
+## * `dlltool` - The dlltool binary to use (as a binary name or path), defaulting to `dlltool`.
+## * `nm` - The nm binary to use (as a binary name or path), defaulting to `nm`.
+## * `readelf` - The readelf binary to use (as a binary name or path), defaulting to `readelf`.
+## * `strip` - The strip binary to use (as a binary name or path), defaulting to `strip`.
+## * `libtool` - The libtool binary to use (as a binary name or path), defaulting to `libtool`.
+## * `install-name-tool` - The install-name-tool binary to use (as a binary name or path),
+## defaulting to `install_name_tool`.
+## * `lipo` - The lipo binary to use (as a binary name or path), defaulting to `lipo`.
 ## * `compile-flags` - Flags to always pass to `compiler` when compiling source code.
 ## * `c-compile-flags` - Flags to always pass to `c-compiler` when compiling C source code.
 ## * `link-flags` - Flags to always pass to `compiler` when linking compiled code.
@@ -190,46 +197,48 @@ toolchain = fn {
     }
 }
 
-## Get a toolchain based on the environment.
-##
-## Arguments: (none)
-## 
-## This toolchain is derived from the following environment variables:
-## * `CXX`
-## * `CC`
-## * `AR`
-## * `RANLIB`
-## * `OBJCOPY`
-## * `OBJDUMP`
-## * `ADDR2LINE`
-## * `DLLTOOL`
-## * `NM`
-## * `READELF`
-## * `STRIP`
-## * `LIBTOOL`
-## * `INSTALL_NAME_TOOL`
-## * `LIPO`
-##
-## If any of these variables are not set, the default name is used instead.
-env-toolchain = fn: -> toolchain {
-    compiler = env:get CXX
-    c-compiler = env:get CC
-    archiver = env:get AR
-    ranlib = env:get RANLIB
-    object-copy = env:get OBJCOPY
-    object-dump = env:get OBJDUMP
-    addr2line = env:get ADDR2LINE
-    dlltool = env:get DLLTOOL
-    nm = env:get NM
-    readelf = env:get READELF
-    strip = env:get STRIP
-    libtool = env:get LIBTOOL
-    install-name-tool = env:get INSTALL_NAME_TOOL
-    lipo = env:get LIPO
+env-toolchain = {
+    ## Parse space-separated flags from an environment variable, if set.
+    parse-env-flags = fn :var -> {
+        strs = String:split " " (env-or :var "")
+        Array:from <| Iter:filter (fn :v -> match :v ["" -> Bool:false, _ -> Bool:true]) :strs
+    }
 
-    compile-flags = parse-env-flags CXXFLAGS
-    c-compile-flags = parse-env-flags CFLAGS
-    link-flags = parse-env-flags LDFLAGS
+    env-vars = {
+        compiler = CXX
+        c-compiler = CC
+        archiver = AR
+        ranlib = RANLIB
+        object-copy = OBJCOPY
+        object-dump = OBJDUMP
+        addr2line = ADDR2LINE
+        dlltool = DLLTOOL
+        nm = NM
+        readelf = READELF
+        strip = STRIP
+        libtool = LIBTOOL
+        install-name-tool = INSTALL_NAME_TOOL
+        lipo = LIPO
+    }
+
+    env-flags = {
+        compile-flags = CXXFLAGS
+        c-compile-flags = CFLAGS
+        link-flags = LDFLAGS
+    }
+
+    map-values = fn :f :m -> Map:from <| Iter:map (fn :e -> std:MapEntry: e:key (!std:eval <| f e:value)) :m
+
+    ## A toolchain based on the environment.
+    ## 
+    ## This toolchain is derived from the following environment variables:
+    ## {{String:join "\n" <| Iter:map (fn :e -> String:format '* `{}`' e:value) <| Iter:flatten [:env-vars,:env-flags]}}
+    ##
+    ## If any of these variables are not set, the default value (per `toolchain`) is used instead.
+    toolchain {
+        ^map-values env:get :env-vars
+        ^map-values :parse-env-flags :env-flags
+    }
 }
 
 ## Handles caching of the given path.
