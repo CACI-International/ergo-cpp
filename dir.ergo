@@ -676,7 +676,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
             ]
             links = {
                 ::name = :compat-version
-                ::compat-version = !std:eval <| match :abiname [(!:compat-version) -> std:Unset:, std:Function:pass]
+                ::compat-version = !match :abiname [(!:compat-version) -> :unset, std:Function:pass]
             }
         }
         _ -> {
