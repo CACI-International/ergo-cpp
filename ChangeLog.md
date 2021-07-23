@@ -14,6 +14,7 @@
   creating the `Module`.
 * `compile-flags` and `link-flags` arguments now are just arrays; if the context
   is needed, use `context`.
+* Change `env-toolchain` to be a value rather than a function.
 
 ## 0.8.3  -- 2021-06-23
 * Fix a bug with symbolic link creation.
