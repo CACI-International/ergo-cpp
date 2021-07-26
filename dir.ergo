@@ -440,7 +440,7 @@ context = std:dynamic:get :context-key
 
 context-fn = pat :ctx ^:rest -> :v -> {
     bind :ctx <| !eval-when :v :context
-    bind (fn ^!:rest -> ()) :v
+    bind :rest :v
 }
 
 ## Evaluate uses.
