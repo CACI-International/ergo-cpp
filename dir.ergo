@@ -117,8 +117,9 @@ toolchain = fn {
     detect = fn :filename -> {
         result = std:by-content <| cache {
             file = Path:join :script-dir detection :filename
-            output = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -imacros cassert -E -P :file |>:stdout
-            String:format '"{}"' :result _ = String:trim <| String:from :output
+            exec-result = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -xc++-header -imacros cassert -E -P :file
+            exec-result:complete
+            String:format '"{}"' :result _ = String:trim <| String:from exec-result:stdout
             :result
         }
         log:debug <| String:format "detection file `{}` yielded `{}`" :filename :result
