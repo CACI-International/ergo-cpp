@@ -1,5 +1,8 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Optimize header dependency tracking with additional caching.
+
 ## 0.9.0  -- 2021-08-03
 * Updated to support ergo-1.0.0-rc.0.
 * Expose the `context` value to retrieve the current compilation context.
