@@ -839,11 +839,11 @@ Options = pat :opts -> default {
 ## map under the `extra` key in the context.
 get-output = fn {
     project-root = Path :project-root
-    toolchain = default (Map :toolchain) as (toolchain {})
+    toolchain = default (Map :tc) as !(toolchain {})
     options = Options :options
     ^:extra
 } :module -> {
-    Module: :v = std:dynamic:eval { ::context-key = { project-root, toolchain, options, extra } } :module
+    Module: :v = std:dynamic:eval { ::context-key = { project-root, toolchain = :tc, options, extra } } :module
     :v
 }
 
