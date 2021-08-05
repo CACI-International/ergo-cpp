@@ -375,7 +375,7 @@ all-files = fn (dir = std:Path:or-source ^parent :dir) -> glob-src :dir *.cpp
 header-paths = {
     inner = std:Function:recursive <| fn :self :descr -> {
         match :descr [
-            all -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name :a)) :a) <| glob-src (default (std:source:path :descr) as std:env:current-dir) *.h
+            all -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name :a)) :a) <| glob-src (default (std:source:dir :descr) as std:env:current-dir) *.h
             Array :files -> Iter:map (fn :a -> std:MapEntry: (!Path:join (Path:name (Path:join :a))) (Path:join :a)) :files
             Map :dirs -> {
                 Iter:flatten <| Iter:map (fn (std:MapEntry: :key :val) -> {

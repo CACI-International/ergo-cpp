@@ -1,7 +1,7 @@
 std:import {fs, match, script, seq, Iter, Path} = std:
 
 c++ = ergo ..
-project-root = Path:parent <| std:source-path ()
+project-root = std:source:dir ()
 build = fn :toolchain :p -> {
     # Load requested output
     output = ergo <| Path:join :project-root :p

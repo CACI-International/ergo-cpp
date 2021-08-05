@@ -3,6 +3,7 @@
 ## Unreleased
 * Optimize header dependency tracking with additional caching.
 * Fix toolchain default behavior (a bug was making it default to Unset).
+* Fix bug in `header-paths` preventing `all` from working as intended.
 
 ## 0.9.0  -- 2021-08-03
 * Updated to support ergo-1.0.0-rc.0.
