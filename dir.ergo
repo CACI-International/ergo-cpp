@@ -192,6 +192,7 @@ env-toolchain = {
     env-bin = {
         cc = CC
         c++ = CXX
+        ar = AR
     }
 
     env-flags = {
