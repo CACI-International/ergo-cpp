@@ -1,8 +1,8 @@
 # The c++ module provides an abstraction over c++ compilation and linking.
 # This module assumes binaries that are compatible with gcc flags (typically gcc and clang).
 
-std:import { cache, default, env, exec, fs, match, task } = std:
-std:import { Array, Bool, Iter, Map, Path, String } = std:
+std:import { cache, default, env, exec, fs, if, match, task } = std:
+std:import { Array, Bool, Error, Iter, Map, Path, String, Unset } = std:
 
 log = std:log:sublog c++
 
@@ -17,48 +17,29 @@ run = fn :description ^:args -> task (count = 1) :description (exec ^:args):comp
 # TODO divorce the linking/native/binutils stuff from c/c++, separate c and c++ into separate
 # libraries
 
+split-path-var = env:get PATH | String:split ":" | Iter:map Path:join | Array:from
+paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map (fn :p -> String:format "{}" :p) :paths
+
 ## Create a toolchain from the given configuration.
 ##
 ## Arguments: `(Map :config)`
 ## 
 ## The `config` may contain the following optional keys:
-## * `compiler` - The compiler to use (as a binary name or path), defaulting to `c++`.
-## * `c-compiler` - The C compiler to use (as a binary name or path), defaulting to `cc`.
-## * `archiver` - The archiver to use (as a binary name or path), defaulting to `ar`.
-## * `ranlib` - The ranlib binary to use (as a binary name or path), defaulting to `ranlib`.
-## * `object-copy` - The object-copy binary to use (as a binary name or path), defaulting to
-## `objcopy`.
-## * `object-dump` - The tool to inspect generated object files (as a binary or path), defaulting to
-##   `objdump`.
-## * `addr2line` - The addr2line binary to use (as a binary name or path), defaulting to
-## `addr2line`.
-## * `dlltool` - The dlltool binary to use (as a binary name or path), defaulting to `dlltool`.
-## * `nm` - The nm binary to use (as a binary name or path), defaulting to `nm`.
-## * `readelf` - The readelf binary to use (as a binary name or path), defaulting to `readelf`.
-## * `strip` - The strip binary to use (as a binary name or path), defaulting to `strip`.
-## * `libtool` - The libtool binary to use (as a binary name or path), defaulting to `libtool`.
-## * `install-name-tool` - The install-name-tool binary to use (as a binary name or path),
-## defaulting to `install_name_tool`.
-## * `lipo` - The lipo binary to use (as a binary name or path), defaulting to `lipo`.
+## * `paths` - Search paths containing the toolchain, defaults to the current `PATH`.
+## * `target-triple` - The target triple prefix to use when searching for tools.
+## * `override` - Overridden names or paths of tools.
 ## * `compile-flags` - Flags to always pass to `compiler` when compiling source code.
 ## * `c-compile-flags` - Flags to always pass to `c-compiler` when compiling C source code.
 ## * `link-flags` - Flags to always pass to `compiler` when linking compiled code.
 ##
 ## The returned toolchain is a map with the following keys:
+## * `paths` - The provided `paths` value
+## * `target-triple` - The provided `target-triple` value
+## * `override` - The provided `override` value
+## * `find-tool` - A function that finds tools in the toolchain
 ## * `compiler` - The resolved C++ compiler
 ## * `c-compiler` - The resolved C compiler
 ## * `archiver` - The resolved archiver program
-## * `ranlib` - The resolved ranlib program
-## * `object-copy` - The resolved object-copy program
-## * `object-dump` - The resolved object-dump program
-## * `addr2line` - The resolved addr2line program
-## * `dlltool` - The resolved dlltool program
-## * `nm` - The resolved nm program
-## * `readelf` - The resolved readelf program
-## * `strip` - The resolved strip program
-## * `libtool` - The resolved libtool program
-## * `install-name-tool` - The resolved install-name-tool program
-## * `lipo` - The resolved lipo program
 ## * `compile-flags` - The compile flags to use with the C++ compiler
 ## * `c-compile-flags` - The compile flags to use with the C compiler
 ## * `link-flags` - The link flags to use when linking
@@ -80,44 +61,55 @@ run = fn :description ^:args -> task (count = 1) :description (exec ^:args):comp
 ##   library name.
 ##   * `exe-name` - A function that returns the filesystem name for a particular executable name.
 toolchain = fn {
-    compiler = default :compiler as c++
-    c-compiler = default :c-compiler as cc
-    archiver = default :archiver as ar
-    ranlib = default :ranlib as ranlib
-    object-copy = default :object-copy as objcopy
-    object-dump = default :object-dump as objdump
-    addr2line = default :addr2line as addr2line
-    dlltool = default :dlltool as dlltool
-    nm = default :nm as nm
-    readelf = default :readelf as readelf
-    strip = default :strip as strip
-    libtool = default :libtool as libtool
-    install-name-tool = default :install-name-tool as install_name_tool
-    lipo = default :lipo as lipo
-    
+    paths = default (Array:Of :Path |> :paths) as !:split-path-var
+    :target-triple
+    override = default (Map:Of :String :Path |> :override) as {}
+
     compile-flags = default :compile-flags as []
     c-compile-flags = default :c-compile-flags as []
     link-flags = default :link-flags as []
 } -> {
-    compiler = env:path-search :compiler
-    c-compiler = env:path-search :c-compiler
-    archiver = env:path-search :archiver
-    ranlib = env:path-search :ranlib
-    object-copy = env:path-search :object-copy
-    object-dump = env:path-search :object-dump
-    addr2line = env:path-search :addr2line
-    dlltool = env:path-search :dlltool
-    nm = env:path-search :nm
-    readelf = env:path-search :readelf
-    strip = env:path-search :strip
-    libtool = env:path-search :libtool
-    install-name-tool = env:path-search :install-name-tool
-    lipo = env:path-search :lipo
+    search = fn (String :tool) -> {
+        prefixed = Iter:map (fn :path -> Path:join :path <| String:format "{}-{}" :target-triple :tool) :paths
+        plain = Iter:map (fn :path -> Path:join :path :tool) :paths
+
+        # Prefer prefixed tools
+        [:tool] = Iter:flatten [
+            Iter:filter fs:exists <| if :target-triple :prefixed []
+            Iter:filter fs:exists :plain
+            [:unset]
+        ] | Iter:take 1 | Array:from
+        :tool
+    }
+    
+    ## Find tools in the toolchain by name.
+    ##
+    ## Tools are found in the following order:
+    ## * If a path is specified in `override::tool`, return it.
+    ## * If a string is specified in `override::tool`, use it as the search name in the following procedure.
+    ## * Search the provided paths for a tool with the name `"{:target-triple}-{:tool}"`.
+    ## * Search the provided paths for a tool with the name `:tool`.
+    ## * Return `Unset` if no tool is found.
+    ##
+    ## Arguments: (String :tool)
+    find-tool = fn (String :tool) -> cache {
+        p = match override::tool [
+            Unset _ -> search :tool
+            String :name -> search :name
+            Path :p -> :p
+        ]
+        std:log:info <| String:format "Found tool `{}` at `{}`" :tool :p
+        :p
+    }
+
+    compiler = find-tool c++
+    c-compiler = find-tool cc
+    archiver = find-tool ar
 
     detect = fn :filename -> {
         result = std:by-content <| cache {
             file = Path:join :script-dir detection :filename
-            exec-result = exec (env = { PATH = env:get PATH }) :compiler ^:compile-flags -xc++-header -imacros cassert -E -P :file
+            exec-result = exec (env = { PATH = paths-to-path-var :paths }) :compiler ^:compile-flags -xc++-header -imacros cassert -E -P :file
             exec-result:complete
             String:format '"{}"' :result _ = String:trim <| String:from exec-result:stdout
             :result
@@ -127,20 +119,14 @@ toolchain = fn {
     }
 
     {
+        paths
+        target-triple
+        override
+        find-tool
+
         compiler
         c-compiler
         archiver
-        ranlib
-        object-copy
-        object-dump
-        addr2line
-        dlltool
-        nm
-        readelf
-        strip
-        libtool
-        install-name-tool
-        lipo
 
         compile-flags
         c-compile-flags
@@ -205,21 +191,18 @@ env-toolchain = {
         Array:from <| Iter:filter (fn :v -> match :v ["" -> Bool:false, _ -> Bool:true]) :strs
     }
 
-    env-vars = {
-        compiler = CXX
-        c-compiler = CC
-        archiver = AR
-        ranlib = RANLIB
-        object-copy = OBJCOPY
-        object-dump = OBJDUMP
-        addr2line = ADDR2LINE
-        dlltool = DLLTOOL
-        nm = NM
-        readelf = READELF
-        strip = STRIP
-        libtool = LIBTOOL
-        install-name-tool = INSTALL_NAME_TOOL
-        lipo = LIPO
+    ## Find binary from environment variable, if set.
+    find-env-bin = fn :var -> match (env:get :var) [
+        :unset -> :unset
+        :value -> match (env:path-search :value) [
+            Error _ -> Path:join :value
+            Path :p -> :p
+        ]
+    ]
+
+    env-bin = {
+        cc = CC
+        c++ = CXX
     }
 
     env-flags = {
@@ -233,11 +216,11 @@ env-toolchain = {
     ## A toolchain based on the environment.
     ## 
     ## This toolchain is derived from the following environment variables:
-    ## {{String:join "\n" <| Iter:map (fn :e -> String:format '* `{}`' e:value) <| Iter:flatten [:env-vars,:env-flags]}}
+    ## {{String:join "\n" <| Iter:map (fn :e -> String:format '* `{}`' e:value) <| Iter:flatten [:env-bin,:env-flags]}}
     ##
     ## If any of these variables are not set, the default value (per `toolchain`) is used instead.
     toolchain {
-        ^map-values env:get :env-vars
+        override = map-values :find-env-bin :env-bin
         ^map-values :parse-env-flags :env-flags
     }
 }
@@ -298,7 +281,7 @@ compile = fn :cache-policy :toolchain :project-root :file :untracked-flags ^:fla
     {
         object = ocache {
             fs:create-dir <| Path:parent :out
-            run (String:format "compiling {}" :file) (env = { PATH = env:get PATH }) toolchain:compiler ^(toolchain-compile-flags :toolchain) -c -o :out ^(!std:variable :untracked-flags) ^:flags :file
+            run (String:format "compiling {}" :file) (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:compiler ^(toolchain-compile-flags :toolchain) -c -o :out ^(!std:variable :untracked-flags) ^:flags :file
             :out
         }
         compile-command = {
@@ -327,7 +310,7 @@ Module = std:type:new (bind = _ -> :v -> std:Error: (source=:v) "cannot directly
 ## that will be used for includes that do not resolve to a file.
 set-file-deps = fn ^{ banned-headers } :toolchain (Path :file) :untracked-compile-flags :compile-flags :known-headers -> {
     deps = cache {
-        deps = (exec (env = { PATH = env:get PATH }) toolchain:compiler
+        deps = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:compiler
                 ^(!toolchain-compile-flags :toolchain) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
                 ^:compile-flags (!fs:track :file)):stdout | String:from | String:trim
         String:format "{}: {}" _ :parts = :deps
@@ -695,7 +678,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
 
     file = fcache {
         fs:create-dir <| Path:parent :file
-        (run (String:format "linking {} {}" :type :name) (env = { PATH = env:get PATH }) ctx:toolchain:compiler
+        (run (String:format "linking {} {}" :type :name) (env = { PATH = paths-to-path-var ctx:toolchain:paths }) ctx:toolchain:compiler
             ^ctx:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag)
         # Make symlinks
         Iter:map (fn (std:MapEntry: :to :from) -> {
