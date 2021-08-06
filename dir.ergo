@@ -762,11 +762,11 @@ static-library = context-fn :ctx (source = std:Path:or-source :source) {
         filename = rename static-library-name :name
         file = Path:join Path:new: :call-site :filename
 
-        [:file,:fcache] = cached-path ctx:options:cache-policy :file [:call-site, :filename, ctx:toolchain:archiver]
+        [:file,:fcache] = cached-path ctx:options:cache-policy :file [:call-site, :filename, ctx:toolchain:tools:ar]
 
         file = fcache {
             fs:create-dir <| Path:parent :file
-            run (String:format "creating static library {}" :filename) ctx:toolchain:archiver -crs :file ^mod:impl
+            run (String:format "creating static library {}" :filename) ctx:toolchain:tools:ar -crs :file ^mod:impl
             :file
         }
 
