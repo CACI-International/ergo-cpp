@@ -28,18 +28,15 @@ paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map
 ## * `paths` - Search paths containing the toolchain, defaults to the current `PATH`.
 ## * `target-triple` - The target triple prefix to use when searching for tools.
 ## * `override` - Overridden names or paths of tools.
-## * `compile-flags` - Flags to always pass to `compiler` when compiling source code.
-## * `c-compile-flags` - Flags to always pass to `c-compiler` when compiling C source code.
-## * `link-flags` - Flags to always pass to `compiler` when linking compiled code.
+## * `compile-flags` - Flags to always pass to the C++ compiler when compiling source code.
+## * `c-compile-flags` - Flags to always pass to the C compiler when compiling C source code.
+## * `link-flags` - Flags to always pass to the compiler when linking compiled code.
 ##
 ## The returned toolchain is a map with the following keys:
 ## * `paths` - The provided `paths` value
 ## * `target-triple` - The provided `target-triple` value
 ## * `override` - The provided `override` value
-## * `find-tool` - A function that finds tools in the toolchain
-## * `compiler` - The resolved C++ compiler
-## * `c-compiler` - The resolved C compiler
-## * `archiver` - The resolved archiver program
+## * `tools` - The indexable collection of tools (e.g. `tools:c++`)
 ## * `compile-flags` - The compile flags to use with the C++ compiler
 ## * `c-compile-flags` - The compile flags to use with the C compiler
 ## * `link-flags` - The link flags to use when linking
@@ -82,7 +79,7 @@ toolchain = fn {
         :tool
     }
     
-    ## Find tools in the toolchain by name.
+    ## Access tools in the toolchain by name.
     ##
     ## Tools are found in the following order:
     ## * If a path is specified in `override::tool`, return it.
@@ -92,24 +89,20 @@ toolchain = fn {
     ## * Return `Unset` if no tool is found.
     ##
     ## Arguments: (String :tool)
-    find-tool = fn (String :tool) -> cache {
+    tools = index (String :tool) -> cache {
         p = match override::tool [
             Unset _ -> search :tool
             String :name -> search :name
             Path :p -> :p
         ]
-        std:log:info <| String:format "Found tool `{}` at `{}`" :tool :p
+        !if :p (std:log:info <| String:format "Found tool `{}` at `{}`" :tool :p) ()
         :p
     }
-
-    compiler = find-tool c++
-    c-compiler = find-tool cc
-    archiver = find-tool ar
 
     detect = fn :filename -> {
         result = std:by-content <| cache {
             file = Path:join :script-dir detection :filename
-            exec-result = exec (env = { PATH = paths-to-path-var :paths }) :compiler ^:compile-flags -xc++-header -imacros cassert -E -P :file
+            exec-result = exec (env = { PATH = paths-to-path-var :paths }) tools:c++ ^:compile-flags -xc++-header -imacros cassert -E -P :file
             exec-result:complete
             String:format '"{}"' :result _ = String:trim <| String:from exec-result:stdout
             :result
@@ -122,11 +115,7 @@ toolchain = fn {
         paths
         target-triple
         override
-        find-tool
-
-        compiler
-        c-compiler
-        archiver
+        tools
 
         compile-flags
         c-compile-flags
@@ -276,16 +265,16 @@ compile = fn :cache-policy :toolchain :project-root :file :untracked-flags ^:fla
     out = Path:join Path:new: <| String:format "{}.o" :proj-path
     flags = flags:positional
 
-    [:out,:ocache] = cached-path :cache-policy :out [:proj-path, toolchain:compiler, !toolchain-compile-flags :toolchain, :flags]
+    [:out,:ocache] = cached-path :cache-policy :out [:proj-path, toolchain:tools:c++, !toolchain-compile-flags :toolchain, :flags]
 
     {
         object = ocache {
             fs:create-dir <| Path:parent :out
-            run (String:format "compiling {}" :file) (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:compiler ^(toolchain-compile-flags :toolchain) -c -o :out ^(!std:variable :untracked-flags) ^:flags :file
+            run (String:format "compiling {}" :file) (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools:c++ ^(toolchain-compile-flags :toolchain) -c -o :out ^(!std:variable :untracked-flags) ^:flags :file
             :out
         }
         compile-command = {
-            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:compiler], toolchain-compile-flags :toolchain, [-c,-o,:out], !std:variable :untracked-flags, :flags, [:file]]
+            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:tools:c++], toolchain-compile-flags :toolchain, [-c,-o,:out], !std:variable :untracked-flags, :flags, [:file]]
             file = String:from :file
             output = String:from :out
             directory = "/"
@@ -310,7 +299,7 @@ Module = std:type:new (bind = _ -> :v -> std:Error: (source=:v) "cannot directly
 ## that will be used for includes that do not resolve to a file.
 set-file-deps = fn ^{ banned-headers } :toolchain (Path :file) :untracked-compile-flags :compile-flags :known-headers -> {
     deps = cache {
-        deps = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:compiler
+        deps = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools:c++
                 ^(!toolchain-compile-flags :toolchain) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
                 ^:compile-flags (!fs:track :file)):stdout | String:from | String:trim
         String:format "{}: {}" _ :parts = :deps
@@ -330,7 +319,7 @@ set-file-deps = fn ^{ banned-headers } :toolchain (Path :file) :untracked-compil
     banned-check = std:if :banned-headers (fn :x -> std:if banned-headers::x { std:Error: (source=:file) <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
     String :id = cache {
         Array :known-depends = Array:from <| Iter:no-errors <| Iter:map (fn :dep -> !std:eval <| match known-headers::dep [ std:Unset -> banned-check :dep, std:Function:pass ]) :to-check
-        std:identity [:exist-depends, :known-depends, !fs:track :file, toolchain:compiler, !toolchain-compile-flags :toolchain, :compile-flags]
+        std:identity [:exist-depends, :known-depends, !fs:track :file, toolchain:tools:c++, !toolchain-compile-flags :toolchain, :compile-flags]
     }
     std:variable (depends=:id) :file
 }
@@ -674,11 +663,11 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
     subdir = Path:join Path:new: :call-site
     file = Path:join :subdir :abiname
 
-    [:file,:fcache] = cached-path ctx:options:cache-policy :file [:call-site, :abiname, ctx:toolchain:compiler, ctx:toolchain:link-flags, :additional-flags]
+    [:file,:fcache] = cached-path ctx:options:cache-policy :file [:call-site, :abiname, ctx:toolchain:tools:c++, ctx:toolchain:link-flags, :additional-flags]
 
     file = fcache {
         fs:create-dir <| Path:parent :file
-        (run (String:format "linking {} {}" :type :name) (env = { PATH = paths-to-path-var ctx:toolchain:paths }) ctx:toolchain:compiler
+        (run (String:format "linking {} {}" :type :name) (env = { PATH = paths-to-path-var ctx:toolchain:paths }) ctx:toolchain:tools:c++
             ^ctx:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag)
         # Make symlinks
         Iter:map (fn (std:MapEntry: :to :from) -> {
