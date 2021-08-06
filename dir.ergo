@@ -95,7 +95,7 @@ toolchain = fn {
             String :name -> search :name
             Path :p -> :p
         ]
-        !if :p (std:log:info <| String:format "Found tool `{}` at `{}`" :tool :p) ()
+        if :p (log:info <| String:format "Found tool `{}` at `{}`" :tool :p) (log:warn <| String:format "Could not find tool `{}`" :tool)
         :p
     }
 
