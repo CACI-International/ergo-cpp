@@ -1,4 +1,4 @@
-std:import {fs, match, script, seq, Iter, Path} = std:
+std:import {fs, match, Iter, Path} = std:
 
 c++ = ergo ..
 project-root = std:source:dir ()
