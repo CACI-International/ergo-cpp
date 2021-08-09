@@ -1,6 +1,7 @@
 # ergo-c++ changelog
 
 ## Unreleased
+* Change toolchain to allow arbitrary tool names.
 * Optimize header dependency tracking with additional caching.
 * Fix toolchain default behavior (a bug was making it default to Unset).
 * Fix bug in `header-paths` preventing `all` from working as intended.
