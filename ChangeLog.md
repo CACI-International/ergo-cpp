@@ -1,6 +1,6 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.9.1  -- 2021-09-07
 * Change toolchain to allow arbitrary tool names.
 * Optimize header dependency tracking with additional caching.
 * Fix toolchain default behavior (a bug was making it default to Unset).
