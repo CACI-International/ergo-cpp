@@ -362,10 +362,36 @@ header-paths = {
     fn :descr -> Map:from <| inner :descr
 }
 
+context-key = "ergo-cpp:context"
+
+eval-when = fn _ :val -> !std:eval :val
+
+## The ergo-cpp context.
+##
+## This is a dynamic binding evaluating to a `Map` containing:
+## * `Path :project-root` - The root directory of the project.
+## * `:toolchain` - The toolchain to use.
+## * `Map :options` - Additional options affecting compilation and linking.
+## * `Map :extra` - User-defined values.
+context = std:dynamic:get :context-key
+
+context-fn = pat :ctx ^:rest -> :v -> {
+    bind :ctx <| !eval-when :v :context
+    bind :rest :v
+    ()
+}
+
 ## Convert a path to an include string.
 path-to-include = fn :p -> String:join "/" <| Path:split :p
 
-modules = Array:Of :Module
+get-module = context-fn :ctx :x -> {
+    # TODO maybe handle this in a more consistent way, like having a module be wrapped by another
+    # type that we eval to prior to doing the caching.
+    # Or, just add dynamic binding result caching to ergo...
+    Module <| cache ^no-persist <| !std:variable (depends = [:ctx,:x,!std:source:path :x]) <| std:dynamic:eval { ::context-key = :ctx } :x
+}
+
+modules = Array:Of :get-module
 match-uses = pat :tgt -> match:value [
     { private = default (modules :private) as []
       public = default (modules :public) as []
@@ -396,24 +422,6 @@ vis = {
         internal = f v:internal
         external = f v:external
     }
-}
-
-context-key = "ergo-cpp:context"
-
-eval-when = fn _ :val -> !std:eval :val
-
-## The ergo-cpp context.
-##
-## This is a dynamic binding evaluating to a `Map` containing:
-## * `Path :project-root` - The root directory of the project.
-## * `:toolchain` - The toolchain to use.
-## * `Map :options` - Additional options affecting compilation and linking.
-## * `Map :extra` - User-defined values.
-context = std:dynamic:get :context-key
-
-context-fn = pat :ctx ^:rest -> :v -> {
-    bind :ctx <| !eval-when :v :context
-    bind :rest :v
 }
 
 ## Evaluate uses.
@@ -755,7 +763,7 @@ static-library = context-fn :ctx (source = std:Path:or-source :source) {
     compile-flags = default (Array :compile-flags) as []
 } -> {
     eval-flags {compile-flags} <| fn _ -> {
-        Module: :mod = :module
+        Module: :mod = get-module :module
 
         call-site = Path:relative ctx:project-root :source
 
