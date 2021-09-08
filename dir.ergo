@@ -59,7 +59,7 @@ paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map
 ##   * `exe-name` - A function that returns the filesystem name for a particular executable name.
 toolchain = fn {
     paths = default (Array:Of :Path |> :paths) as !:split-path-var
-    :target-triple
+    target-triple
     override = default (Map:Of :String :Path |> :override) as {}
 
     compile-flags = default :compile-flags as []
