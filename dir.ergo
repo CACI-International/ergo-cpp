@@ -89,14 +89,14 @@ toolchain = fn {
     ## * Return `Unset` if no tool is found.
     ##
     ## Arguments: (String :tool)
-    tools = index (String :tool) -> cache {
-        p = match override::tool [
+    tools = index (String :tool) -> {
+        result = cache <| match override::tool [
             Unset _ -> search :tool
             String :name -> search :name
             Path :p -> :p
         ]
-        if :p (log:info <| String:format "Found tool `{}` at `{}`" :tool :p) (log:warn <| String:format "Could not find tool `{}`" :tool)
-        :p
+        cache ^no-persist <| if :result (log:info <| String:format "Found tool `{}` at `{}`" :tool :result) (log:warn <| String:format "Could not find tool `{}`" :tool)
+        :result
     }
 
     detect = fn :filename -> {
@@ -104,7 +104,7 @@ toolchain = fn {
             file = Path:join :script-dir detection :filename
             exec-result = exec (env = { PATH = paths-to-path-var :paths }) tools:c++ ^:compile-flags -xc++-header -imacros cassert -E -P :file
             exec-result:complete
-            String:format '"{}"' :result _ = String:trim <| String:from exec-result:stdout
+            String:format '"{}"' :result = String:trim <| String:from exec-result:stdout
             :result
         }
         log:debug <| String:format "detection file `{}` yielded `{}`" :filename :result
