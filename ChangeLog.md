@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Use shallow copies for header files so `#pragma once` and editors can find the
+  original files.
+
 ## 0.9.1  -- 2021-09-07
 * Change toolchain to allow arbitrary tool names.
 * Optimize header dependency tracking with additional caching.
