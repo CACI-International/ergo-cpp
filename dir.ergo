@@ -512,7 +512,7 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
         hdcache {
             fs:remove :dir # Clear any existing directory
             fs:create-dir :dir # Ensure path exists if empty
-            Array:from <| Iter:map (fn (std:MapEntry: :to :from) -> fs:copy ^shallow :from (Path:join :dir :to)) :headers
+            Array:from <| Iter:map (fn (std:MapEntry: :to :from) -> fs:copy (shallow=symbolic) :from (Path:join :dir :to)) :headers
             :dir
         }
     }

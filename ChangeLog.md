@@ -5,6 +5,8 @@
   * There is a race condition that would cause an error to occur. In lieu of
     additional features/support from the standard library, we avoid the error
     but possibly do extra work.
+* Change shallow copies of header files to be symlinks.
+  * These behave better with CI caching.
 
 ## 0.9.3  -- 2021-09-20
 * Fix header tracking! It was broken since the update to ergo rc.0, as
