@@ -235,7 +235,10 @@ cached-path = fn :cache-policy :path :depends -> {
                 # Create a string which tracks the argument
                 String :me = std:identity :v
                 # Read the last writer, if any.
-                String :last-writer = String:from (std:if (fs:exists :last-writer-file) (fs:read :last-writer-file) "")
+                String :last-writer = match (fs:read :last-writer-file) [
+                    Error _ -> ""
+                    :bs -> String:from :bs
+                ]
                 # Shortcut and return `out` if the last writer was this value.
                 # The returned value should have the same identity as `v`
                 Path :p = match :last-writer [

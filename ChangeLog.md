@@ -1,5 +1,11 @@
 # ergo-c++ changelog
 
+## 0.9.4  -- 2021-09-21
+* Improve concurrent behavior of configuration-based caching.
+  * There is a race condition that would cause an error to occur. In lieu of
+    additional features/support from the standard library, we avoid the error
+    but possibly do extra work.
+
 ## 0.9.3  -- 2021-09-20
 * Fix header tracking! It was broken since the update to ergo rc.0, as
   the semantics around evaluation were being relied upon for correct caching.
