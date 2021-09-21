@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## 0.9.3  -- 2021-09-20
+* Fix header tracking! It was broken since the update to ergo rc.0, as
+  the semantics around evaluation were being relied upon for correct caching.
+
 ## 0.9.2  -- 2021-09-08
 * Use shallow copies for header files so `#pragma once` and editors can find the
   original files.

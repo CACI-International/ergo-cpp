@@ -298,11 +298,12 @@ Module = std:type:new (bind = _ -> :v -> std:Error: (source=:v) "cannot directly
 
 ## Return a file path that depends on all include dependencies, given a map of header paths to dependencies
 ## that will be used for includes that do not resolve to a file.
-set-file-deps = fn ^{ banned-headers } :toolchain (Path :file) :untracked-compile-flags :compile-flags :known-headers -> {
+set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :untracked-compile-flags :compile-flags (Map :known-headers) -> {
     deps = cache {
+        file-type = if :file-type (String:format "-x{}" :file-type) ""
         deps = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools:c++
                 ^(!toolchain-compile-flags :toolchain) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
-                ^:compile-flags (!fs:track :file)):stdout | String:from | String:trim
+                ^:compile-flags :file-type (!fs:track :file)):stdout | String:from | String:trim
         String:format "{}: {}" _ :parts = :deps
         (:parts
         # Split on continuation newlines from make syntax
@@ -520,8 +521,8 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
     # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
     # ban internal header-deps so that if they are used, an error will occur about exposing a private module
     mod-header-deps = !Iter:map (fn (std:MapEntry: :to :from) -> {
-        std:MapEntry: (path-to-include :to) (
-            !std:eval <| set-file-deps (banned-headers = evaled:header-deps:internal)
+        std:MapEntry: (!String <| path-to-include :to) (
+            !std:eval <| set-file-deps (banned-headers = evaled:header-deps:internal) (file-type = c++-header)
                 ctx:toolchain :from [-I,:header-dir] :compile-flags evaled:header-deps:external
             )
     }) :headers
