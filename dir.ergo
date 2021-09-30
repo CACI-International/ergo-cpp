@@ -452,16 +452,18 @@ eval-uses = fn :uses -> {
 }
 
 module-result = fn :all-uses { impl, runtime, compile-commands, header-dirs, header-deps, ^:rest } -> {
-    impl = Array:from <| Iter:unique <| Iter:flatten [
+    # Evaluate these arrays because we want the resulting map to depend on the identities of the
+    # array contents.
+    Array :impl = Array:from <| Iter:unique <| Iter:flatten [
         Iter:map (fn :m -> m:impl) :all-uses | Iter:flatten
         :impl
     ]
-    runtime = Array:from <| Iter:unique <| Iter:flatten [
+    Array :runtime = Array:from <| Iter:unique <| Iter:flatten [
         Iter:map (fn :m -> m:runtime) :all-uses | Iter:flatten
         Iter:map (fn :m -> m:runtime-if-used) :all-uses | Iter:filter (fn :a -> :a) | Iter:flatten
         :runtime
     ]
-    compile-commands = Array:from <| Iter:unique <| Iter:flatten [
+    Array :compile-commands = Array:from <| Iter:unique <| Iter:flatten [
         :all-uses | Iter:map (fn :u -> u:compile-commands) | Iter:filter (fn :a -> :a) | Iter:flatten
         :compile-commands
     ]

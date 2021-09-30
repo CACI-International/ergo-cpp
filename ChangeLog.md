@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## 0.9.5  -- 2021-09-29
+* Fix a bug in nested module change tracking.
+  * Changes to nested module files would be missed in subsequent builds.
+
 ## 0.9.4  -- 2021-09-21
 * Improve concurrent behavior of configuration-based caching.
   * There is a race condition that would cause an error to occur. In lieu of
