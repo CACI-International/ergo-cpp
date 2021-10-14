@@ -606,9 +606,9 @@ eval-flags = context-fn :ctx {compile-flags, link-flags} :f -> {
 exact-name = {
     key = "ergo-cpp:exact-name"
     match:value [
-        fn :name -> std:meta:set :name :key ()
+        fn :name -> std:meta:set :key () :name
         pat :out -> :name -> {
-            std:if (std:meta:get :name :key) (bind :out :name) (std:Error: (source=:name) "not an exact-name")
+            std:if (std:meta:get :key :name) (bind :out :name) (std:Error: (source=:name) "not an exact-name")
             ()
         }
     ]

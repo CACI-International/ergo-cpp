@@ -1,5 +1,8 @@
 # ergo-c++ changelog
 
+## 0.9.6  -- 2021-10-14
+* Fix a bug in `exact-name` behavior.
+
 ## 0.9.5  -- 2021-09-29
 * Fix a bug in nested module change tracking.
   * Changes to nested module files would be missed in subsequent builds.
