@@ -264,28 +264,34 @@ cached-path = fn :cache-policy :path :depends -> {
     ]
 }
 
-toolchain-compile-flags = fn :toolchain -> [
-    ^toolchain:compile-flags
-    ^default toolchain:extra-compile-flags as []
+toolchain-compile-flags = fn :toolchain :compiler -> match :compiler [
+    cc -> [
+        ^toolchain:c-compile-flags
+        ^default toolchain:extra-c-compile-flags as []
+    ]
+    c++ -> [
+        ^toolchain:compile-flags
+        ^default toolchain:extra-compile-flags as []
+    ]
 ]
 
 ## Compile a file with the given flags.
 ## The project-root argument is used to ensure the file paths in compiled debug sections are user-friendly.
-compile = fn :cache-policy :toolchain :project-root :file :untracked-flags ^:flags -> {
+compile = fn :cache-policy :toolchain :project-root :file :compiler :untracked-flags ^:flags -> {
     proj-path = !Path:relative :project-root :file
     out = Path:join Path:new: <| String:format "{}.o" :proj-path
     flags = flags:positional
 
-    [:out,:ocache] = cached-path :cache-policy :out [:proj-path, toolchain:tools:c++, !toolchain-compile-flags :toolchain, :flags]
+    [:out,:ocache] = cached-path :cache-policy :out [:proj-path, toolchain:tools::compiler, !toolchain-compile-flags :toolchain :compiler, :flags]
 
     {
         object = ocache {
             fs:create-dir <| Path:parent :out
-            run (String:format "compiling {}" :file) (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools:c++ ^(toolchain-compile-flags :toolchain) -c -o :out ^(!std:variable :untracked-flags) ^:flags :file
+            run (String:format "compiling {}" :file) (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools::compiler ^(toolchain-compile-flags :toolchain :compiler) -c -o :out ^(!std:variable :untracked-flags) ^:flags :file
             :out
         }
         compile-command = {
-            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:tools:c++], toolchain-compile-flags :toolchain, [-c,-o,:out], !std:variable :untracked-flags, :flags, [:file]]
+            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:tools::compiler], toolchain-compile-flags :toolchain :compiler, [-c,-o,:out], !std:variable :untracked-flags, :flags, [:file]]
             file = String:from :file
             output = String:from :out
             directory = "/"
@@ -308,11 +314,11 @@ Module = std:type:new (bind = _ -> :v -> std:Error: (source=:v) "cannot directly
 
 ## Return a file path that depends on all include dependencies, given a map of header paths to dependencies
 ## that will be used for includes that do not resolve to a file.
-set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :untracked-compile-flags :compile-flags (Map :known-headers) -> {
+set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :compiler :untracked-compile-flags :compile-flags (Map :known-headers) -> {
     deps = cache {
         file-type = if :file-type [String:format "-x{}" :file-type] []
         deps = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools:c++
-                ^(!toolchain-compile-flags :toolchain) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
+                ^(!toolchain-compile-flags :toolchain :compiler) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
                 ^:compile-flags ^:file-type (!fs:track :file)):stdout | String:from | String:trim
         String:format "{}: {}" _ :parts = :deps
         (:parts
@@ -331,7 +337,7 @@ set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :untra
     banned-check = if :banned-headers (fn :x -> if banned-headers::x { std:Error: (source=:file) <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
     String :id = cache {
         Array :known-depends = Array:from <| Iter:no-errors <| Iter:map (fn :dep -> !eval-now <| match known-headers::dep [ std:Unset _ -> banned-check :dep, :v -> :v ]) :to-check
-        std:identity [:exist-depends, :known-depends, !fs:track :file, toolchain:tools:c++, !toolchain-compile-flags :toolchain, :compile-flags]
+        std:identity [:exist-depends, :known-depends, !fs:track :file, toolchain:tools::compiler, !toolchain-compile-flags :toolchain :compiler, :compile-flags]
     }
     std:variable (depends=:id) :file
 }
@@ -510,6 +516,7 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
     headers = default (Map :headers) as {}
     uses = match-uses :uses
     compile-flags = default (Array :compile-flags) as []
+    c-compile-flags = default (Array :c-compile-flags) as []
 } -> Module: {
     files = !Iter:map (fn :f -> !fs:track <| Path:join :relative-dir :f) :files
     headers-spec = :headers
@@ -535,14 +542,20 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
     mod-header-deps = !Iter:map (fn (std:MapEntry: :to :from) -> {
         std:MapEntry: (!String <| path-to-include :to) (
             !eval-now <| set-file-deps (banned-headers = evaled:header-deps:internal) (file-type = c++-header)
-                ctx:toolchain :from [-I,:header-dir] :compile-flags evaled:header-deps:external
+                ctx:toolchain :from c++ [-I,:header-dir] :compile-flags evaled:header-deps:external
             )
     }) :headers
     header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
 
-    compiles = !Iter:map (fn :f -> (compile ctx:options:cache-policy ctx:toolchain ctx:project-root
-            (!eval-now <| set-file-deps ctx:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags)
-        ) :files
+    compiles = !Iter:map (fn :f -> {
+        {compiler, flags} = match (String:split . <| Path:name :f) [
+            [^_, c] -> { compiler = cc, flags = :c-compile-flags }
+            [^_, C] -> { compiler = cc, flags = :c-compile-flags }
+            _ -> { compiler = c++, flags = :compile-flags }
+        ]
+        f = !eval-now <| set-file-deps ctx:toolchain :f :compiler [] :flags header-deps:internal
+        compile ctx:options:cache-policy ctx:toolchain ctx:project-root :f :compiler :includes ^:flags
+    }) :files
     objects = Iter:map (fn :c -> c:object) :compiles
     compile-commands = Iter:map (fn :c -> c:compile-command) :compiles
 
@@ -597,12 +610,13 @@ compiled-module = fn {
     module-result evaled:uses { impl = :link, runtime, compile-commands, header-dirs, header-deps, ^:rest }
 }
 
-eval-flags = context-fn :ctx {compile-flags, link-flags} :f -> {
+eval-flags = context-fn :ctx {compile-flags, c-compile-flags, link-flags} :f -> {
     newctx = {
         ^:ctx
         toolchain = {
             ^ctx:toolchain
             extra-compile-flags = !std:by-content :compile-flags
+            extra-c-compile-flags = !std:by-content :c-compile-flags
         }
     }
     link-flags = !std:by-content :link-flags
@@ -729,9 +743,10 @@ exe = fn (source = std:Path:or-source :source) {
     name = String :name
     module
     compile-flags = default (Array :compile-flags) as []
+    c-compile-flags = default (Array :c-compile-flags) as []
     link-flags = default (Array :link-flags) as []
 } -> {
-    eval-flags {compile-flags,link-flags} <| fn :extra-link-flags -> {
+    eval-flags {compile-flags,c-compile-flags,link-flags} <| fn :extra-link-flags -> {
         link :source (rename exe-name :name) :module :extra-link-flags executable Bool:false
     }
 }
@@ -752,12 +767,14 @@ dynamic-library = fn (source = std:Path:or-source :source) {
     name = String :name
     module
     compile-flags = default (Array :compile-flags) as []
+    c-compile-flags = default (Array :c-compile-flags) as []
     link-flags = default (Array :link-flags) as []
     abi-version = std:optional (String :abi-version)
 } -> {
     # Must always have -fPIC when compiling code in a shared library.
     compile-flags = [^:compile-flags,-fPIC]
-    eval-flags {compile-flags,link-flags} <| fn :extra-link-flags -> {
+    c-compile-flags = [^:c-compile-flags,-fPIC]
+    eval-flags {compile-flags,c-compile-flags,link-flags} <| fn :extra-link-flags -> {
         link ^{abi-version} :source (rename dynamic-library-name :name) :module [-shared,^:extra-link-flags] "dynamic library" Bool:true
     }
 }
@@ -774,8 +791,9 @@ static-library = context-fn :ctx (source = std:Path:or-source :source) {
     name = String :name
     module
     compile-flags = default (Array :compile-flags) as []
+    c-compile-flags = default (Array :c-compile-flags) as []
 } -> {
-    eval-flags {compile-flags} <| fn _ -> {
+    eval-flags {compile-flags,c-compile-flags} <| fn _ -> {
         Module: :mod = get-module :module
 
         call-site = Path:relative ctx:project-root :source
