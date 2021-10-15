@@ -317,7 +317,7 @@ Module = std:type:new (bind = _ -> :v -> std:Error: (source=:v) "cannot directly
 set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :compiler :untracked-compile-flags :compile-flags (Map :known-headers) -> {
     deps = cache {
         file-type = if :file-type [String:format "-x{}" :file-type] []
-        deps = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools:c++
+        deps = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools::compiler
                 ^(!toolchain-compile-flags :toolchain :compiler) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
                 ^:compile-flags ^:file-type (!fs:track :file)):stdout | String:from | String:trim
         String:format "{}: {}" _ :parts = :deps
@@ -498,7 +498,8 @@ module-result = fn :all-uses { impl, runtime, compile-commands, header-dirs, hea
 ##     and will be visible to consumers of this module.
 ##   * `private`: an array of modules which will be used when compiling files in this module.
 ##   * `export`: an array of modules which will be visible to consumers of this module.
-## * `compile-flags`: additional compilation flags to use when compiling files in this module
+## * `compile-flags`: additional compilation flags to use when compiling C++ files in this module
+## * `c-compile-flags`: additional compilation flags to use when compiling C files in this module
 ## 
 ## In both files and headers, if a file is a relative path, it will be relative to the calling
 ## script directory. To set the relative path explicitly, pass the keyed argument `relative-dir`.
@@ -548,9 +549,8 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
     header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
 
     compiles = !Iter:map (fn :f -> {
-        {compiler, flags} = match (String:split . <| Path:name :f) [
-            [^_, c] -> { compiler = cc, flags = :c-compile-flags }
-            [^_, C] -> { compiler = cc, flags = :c-compile-flags }
+        {compiler, flags} = match (String:split . <| Path:name :f):-1 [
+            std:bind:or c C -> { compiler = cc, flags = :c-compile-flags }
             _ -> { compiler = c++, flags = :compile-flags }
         ]
         f = !eval-now <| set-file-deps ctx:toolchain :f :compiler [] :flags header-deps:internal
@@ -737,7 +737,8 @@ rename = context-fn :ctx :f :name -> match :name [
 ## The `config` includes:
 ## * `String :name` - the name of the executable
 ## * `Module :mod` - the module to make into an executable
-## * `optional (Array :compile-flags)` - additional compile flags to use
+## * `optional (Array :compile-flags)` - additional C++ compile flags to use
+## * `optional (Array :c-compile-flags)` - additional C compile flags to use
 ## * `optional (Array :link-flags)` - additional link flags to use
 exe = fn (source = std:Path:or-source :source) {
     name = String :name
@@ -758,7 +759,8 @@ exe = fn (source = std:Path:or-source :source) {
 ## The `config` includes:
 ## * `String :name` - the name of the library
 ## * `Module :mod` - the module to make into a library
-## * `optional (Array :compile-flags)` - additional compile flags to use
+## * `optional (Array :compile-flags)` - additional C++ compile flags to use
+## * `optional (Array :c-compile-flags)` - additional C compile flags to use
 ## * `optional (Array :link-flags)` - additional link flags to use
 ## * `optional (String :abi-version)` - the abi version of the dynamic library
 ##   This is used to determine file names and set binary properties. It must be a string of the form
@@ -786,7 +788,8 @@ dynamic-library = fn (source = std:Path:or-source :source) {
 ## The `config` includes:
 ## * `String :name` - the name of the library
 ## * `Module :mod` - the module to make into a library
-## * `optional (Array :compile-flags)` - additional compile flags to use
+## * `optional (Array :compile-flags)` - additional C++ compile flags to use
+## * `optional (Array :c-compile-flags)` - additional C compile flags to use
 static-library = context-fn :ctx (source = std:Path:or-source :source) {
     name = String :name
     module
