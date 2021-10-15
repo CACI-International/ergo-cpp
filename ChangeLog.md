@@ -2,6 +2,7 @@
 
 ## Unreleased
 * Fix a bug in the detection of private includes used in public headers.
+* Fix a bug in file dependency calculation.
 
 ## 0.9.6  -- 2021-10-14
 * Fix a bug in `exact-name` behavior.

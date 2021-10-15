@@ -310,10 +310,10 @@ Module = std:type:new (bind = _ -> :v -> std:Error: (source=:v) "cannot directly
 ## that will be used for includes that do not resolve to a file.
 set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :untracked-compile-flags :compile-flags (Map :known-headers) -> {
     deps = cache {
-        file-type = if :file-type (String:format "-x{}" :file-type) ""
+        file-type = if :file-type [String:format "-x{}" :file-type] []
         deps = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools:c++
                 ^(!toolchain-compile-flags :toolchain) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
-                ^:compile-flags :file-type (!fs:track :file)):stdout | String:from | String:trim
+                ^:compile-flags ^:file-type (!fs:track :file)):stdout | String:from | String:trim
         String:format "{}: {}" _ :parts = :deps
         (:parts
         # Split on continuation newlines from make syntax
