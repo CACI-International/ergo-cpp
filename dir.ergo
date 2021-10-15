@@ -20,6 +20,13 @@ run = fn :description ^:args -> task (count = 1) :description (exec ^:args):comp
 split-path-var = env:get PATH | String:split ":" | Iter:map Path:join | Array:from
 paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map (fn :p -> String:format "{}" :p) :paths
 
+# XXX this is only needed until ergo rc1, where `std:eval` will be fixed
+# std:eval has a bug where it doesn't work as expected if the evaluated value is an Error
+eval-now = fn :v -> !{
+    std:eval :v = :v
+    :v
+}
+
 ## Create a toolchain from the given configuration.
 ##
 ## Arguments: `(Map :config)`
@@ -201,7 +208,7 @@ env-toolchain = {
         link-flags = LDFLAGS
     }
 
-    map-values = fn :f :m -> Map:from <| Iter:map (fn :e -> std:MapEntry: e:key (!std:eval <| f e:value)) :m
+    map-values = fn :f :m -> Map:from <| Iter:map (fn :e -> std:MapEntry: e:key (!eval-now <| f e:value)) :m
 
     ## A toolchain based on the environment.
     ## 
@@ -318,12 +325,12 @@ set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :untra
     }
     # split files based on whether they exist or not
     {exist,to-check} = cache {
-        Iter:zip :exist :to-check = Iter:map (fn :dep -> std:if (fs:exists <| Path:join :dep) [:dep,:unset] [:unset,:dep]) :deps
+        Iter:zip :exist :to-check = Iter:map (fn :dep -> if (fs:exists <| Path:join :dep) [:dep,:unset] [:unset,:dep]) :deps
     }
     Array :exist-depends = Array:from <| Iter:map fs:track :exist
-    banned-check = std:if :banned-headers (fn :x -> std:if banned-headers::x { std:Error: (source=:file) <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
+    banned-check = if :banned-headers (fn :x -> if banned-headers::x { std:Error: (source=:file) <| String:format "private include ({}) used in public header {}" :x :file }) (fn _ -> ())
     String :id = cache {
-        Array :known-depends = Array:from <| Iter:no-errors <| Iter:map (fn :dep -> !std:eval <| match known-headers::dep [ std:Unset -> banned-check :dep, std:Function:pass ]) :to-check
+        Array :known-depends = Array:from <| Iter:no-errors <| Iter:map (fn :dep -> !eval-now <| match known-headers::dep [ std:Unset _ -> banned-check :dep, :v -> :v ]) :to-check
         std:identity [:exist-depends, :known-depends, !fs:track :file, toolchain:tools:c++, !toolchain-compile-flags :toolchain, :compile-flags]
     }
     std:variable (depends=:id) :file
@@ -368,7 +375,7 @@ header-paths = {
 
 context-key = "ergo-cpp:context"
 
-eval-when = fn _ :val -> !std:eval :val
+eval-when = fn _ :val -> !eval-now :val
 
 ## The ergo-cpp context.
 ##
@@ -527,14 +534,14 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
     # ban internal header-deps so that if they are used, an error will occur about exposing a private module
     mod-header-deps = !Iter:map (fn (std:MapEntry: :to :from) -> {
         std:MapEntry: (!String <| path-to-include :to) (
-            !std:eval <| set-file-deps (banned-headers = evaled:header-deps:internal) (file-type = c++-header)
+            !eval-now <| set-file-deps (banned-headers = evaled:header-deps:internal) (file-type = c++-header)
                 ctx:toolchain :from [-I,:header-dir] :compile-flags evaled:header-deps:external
             )
     }) :headers
     header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
 
     compiles = !Iter:map (fn :f -> (compile ctx:options:cache-policy ctx:toolchain ctx:project-root
-            (!std:eval <| set-file-deps ctx:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags)
+            (!eval-now <| set-file-deps ctx:toolchain :f [] :compile-flags header-deps:internal) :includes ^:compile-flags)
         ) :files
     objects = Iter:map (fn :c -> c:object) :compiles
     compile-commands = Iter:map (fn :c -> c:compile-command) :compiles

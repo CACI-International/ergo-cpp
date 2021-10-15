@@ -1,5 +1,8 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Fix a bug in the detection of private includes used in public headers.
+
 ## 0.9.6  -- 2021-10-14
 * Fix a bug in `exact-name` behavior.
 
