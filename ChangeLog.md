@@ -1,6 +1,10 @@
 # ergo-c++ changelog
 
 ## Unreleased
+
+## 0.9.7  -- 2021-10-20
+* Change compilation of `.c` files to use the C compiler.
+  * `c-compile-flags` is used to distinguish from C++ compile flags.
 * Fix a bug in the detection of private includes used in public headers.
 * Fix a bug in file dependency calculation.
 
