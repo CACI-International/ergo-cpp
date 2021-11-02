@@ -801,7 +801,7 @@ static-library = context-fn :ctx (source = std:Path:or-source :source) {
 
         call-site = Path:relative ctx:project-root :source
 
-        filename = rename static-library-name :name
+        String :filename = rename static-library-name :name
         file = Path:join Path:new: :call-site :filename
 
         [:file,:fcache] = cached-path ctx:options:cache-policy :file [:call-site, :filename, ctx:toolchain:tools:ar]

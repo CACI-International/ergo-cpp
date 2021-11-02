@@ -1,6 +1,7 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.9.8  -- 2021-11-02
+* Fix a bug in static library creation.
 
 ## 0.9.7  -- 2021-10-20
 * Change compilation of `.c` files to use the C compiler.
