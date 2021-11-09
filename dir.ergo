@@ -312,6 +312,65 @@ Module = std:type:new (bind = _ -> :v -> std:Error: (source=:v) "cannot directly
     pat :out -> :v -> bind :out :v
 ]
 
+## Module linking type.
+##
+## This type is used in the `link` field resulting from evaluating modules.
+##
+## It has the following String constructors:
+## `Object`, `StaticLib`, `DynamicLib`, `Flag`
+ModuleLink = std:type:enum "ergo-cpp:ModuleLink" {
+    # These are all `Any` because we don't want to force evaluation of inner values (otherwise
+    # evaluation may end up serialized).
+    Object = std:Any
+    StaticLib = std:Any
+    DynamicLib = std:Any
+    Flag = std:Any
+}
+
+## Functions to get values from a module `link` field.
+##
+## {{std:doc:functions :self map subset types unwrap}}
+module-link = {
+    ## Get the inner ModuleLink values with the given types.
+    ##
+    ## Arguments: `(Array:Of :String |> :types) (Into<Iter> :link)`
+    ##
+    ## Returns an Array.
+    types = fn (Array:Of :String |> :types) :link -> Array:from <| Iter:map (fn {val} -> :val) <| Iter:filter (fn :a -> :a) <| Iter:map (fn (ModuleLink :x) -> match :x [
+        ^Array:from <| Iter:map (fn :type -> ModuleLink:(!:type) :s -> {val = :s}) :types
+        _ -> std:Bool:false
+    ]) :link
+
+    ## Get the ModuleLink values with the given types.
+    ##
+    ## Arguments: `(Array:Of :String |> :types) (Into<Iter> :link)`
+    ##
+    ## This differ from `types` as it doesn't unwrap the inner values.
+    ##
+    ## Returns an Array of ModuleLink.
+    subset = fn (Array:Of :String |> :types) :link -> Array:from <| Iter:map (fn {val} -> :val) <| Iter:filter (fn :a -> :a) <| Iter:map (fn (ModuleLink :x) -> match :x [
+        ^Array:from <| Iter:map (fn :type -> std:bind:and :v (ModuleLink:(!:type) _) -> {val = :v}) :types
+        _ -> std:Bool:false
+    ]) :link
+
+    ## Map a function over the inner ModuleLink values.
+    ##
+    ## Arguments: `(Function :f) (Into<Iter> :link)`
+    ##
+    ## Returns an Array of ModuleLink.
+    map = fn (std:Function :f) :link -> Array:from <| Iter:map (fn (ModuleLink :x) -> match :x [
+        ^Array:from <| Iter:map (fn :type -> ModuleLink:(!:type) :s -> ModuleLink::type <| f :s) [Object,StaticLib,DynamicLib,Flag]
+        _ -> std:Bool:false
+    ]) :link
+
+    ## Get the inner ModuleLink values.
+    ##
+    ## Arguments: `(Into<Iter> :link)`
+    ##
+    ## Returns an Array.
+    unwrap = std:Function:partial :types [Object,StaticLib,DynamicLib,Flag]
+}
+
 ## Return a file path that depends on all include dependencies, given a map of header paths to dependencies
 ## that will be used for includes that do not resolve to a file.
 set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :compiler :untracked-compile-flags :compile-flags (Map :known-headers) -> {
@@ -464,12 +523,12 @@ eval-uses = fn :uses -> {
     }
 }
 
-module-result = fn :all-uses { impl, runtime, compile-commands, header-dirs, header-deps, ^:rest } -> {
+module-result = fn :all-uses { link, runtime, compile-commands, header-dirs, header-deps, ^:rest } -> {
     # Evaluate these arrays because we want the resulting map to depend on the identities of the
     # array contents.
-    Array :impl = Array:from <| Iter:unique <| Iter:flatten [
-        Iter:map (fn :m -> m:impl) :all-uses | Iter:flatten
-        :impl
+    Array :link = Array:from <| Iter:unique <| Iter:flatten [
+        Iter:map (fn :m -> m:link) :all-uses | Iter:flatten
+        :link
     ]
     Array :runtime = Array:from <| Iter:unique <| Iter:flatten [
         Iter:map (fn :m -> m:runtime) :all-uses | Iter:flatten
@@ -481,7 +540,7 @@ module-result = fn :all-uses { impl, runtime, compile-commands, header-dirs, hea
         :compile-commands
     ]
 
-    { impl, header-dirs = header-dirs:external, header-deps = header-deps:external, runtime, compile-commands, ^:rest }
+    { link, header-dirs = header-dirs:external, header-deps = header-deps:external, runtime, compile-commands, ^:rest }
 }
 
 ## Create a module with the given configuration.
@@ -540,11 +599,11 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
 
     # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
     # ban internal header-deps so that if they are used, an error will occur about exposing a private module
-    mod-header-deps = !Iter:map (fn (std:MapEntry: :to :from) -> {
-        std:MapEntry: (!String <| path-to-include :to) (
-            !eval-now <| set-file-deps (banned-headers = evaled:header-deps:internal) (file-type = c++-header)
-                ctx:toolchain :from c++ [-I,:header-dir] :compile-flags evaled:header-deps:external
-            )
+    Array :mod-header-deps = Array:from <| Iter:no-errors <| Iter:map (fn (std:MapEntry: :to :from) -> !{
+        v = (!eval-now <| set-file-deps (banned-headers = evaled:header-deps:internal) (file-type = c++-header)
+            ctx:toolchain :from c++ [-I,:header-dir] :compile-flags evaled:header-deps:external)
+        :v # if `v` is an error, fail fast
+        std:MapEntry: (!String <| path-to-include :to) :v
     }) :headers
     header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps,:mod-header-deps]) evaled:header-deps
 
@@ -556,10 +615,10 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
         f = !eval-now <| set-file-deps ctx:toolchain :f :compiler [] :flags header-deps:internal
         compile ctx:options:cache-policy ctx:toolchain ctx:project-root :f :compiler :includes ^:flags
     }) :files
-    objects = Iter:map (fn :c -> c:object) :compiles
+    objects = Iter:map (fn :c -> ModuleLink:Object c:object) :compiles
     compile-commands = Iter:map (fn :c -> c:compile-command) :compiles
 
-    module-result evaled:uses { impl = :objects, runtime = [], compile-commands, header-dirs, header-deps }
+    module-result evaled:uses { link = :objects, runtime = [], compile-commands, header-dirs, header-deps }
 }
 
 ## Create a module that is already compiled.
@@ -567,7 +626,7 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
 ## Arguments: `(Map :config)`
 ## 
 ## The configuration should be a map with the following optional keys:
-## * `Array :link` - object files/libraries to link
+## * `(Array:Of :ModuleLink) :link` - object files/libraries to link
 ## * `(Array:Of :Path) :include-dirs` - include directories
 ## * `(Array:Of :Path) :runtime` - libraries (typically dynamic) needed at runtime
 ## * `(Map :header-deps)` - a map from include path to header file path, which helps in resolving header dependencies
@@ -607,7 +666,7 @@ compiled-module = fn {
     header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [:includes, :header-dirs]) evaled:header-dirs
     header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps, :header-deps]) evaled:header-deps
 
-    module-result evaled:uses { impl = :link, runtime, compile-commands, header-dirs, header-deps, ^:rest }
+    module-result evaled:uses { link, runtime, compile-commands, header-dirs, header-deps, ^:rest }
 }
 
 eval-flags = context-fn :ctx {compile-flags, c-compile-flags, link-flags} :f -> {
@@ -704,7 +763,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
     file = fcache {
         fs:create-dir <| Path:parent :file
         (run (String:format "linking {} {}" :type :name) (env = { PATH = paths-to-path-var ctx:toolchain:paths }) ctx:toolchain:tools:c++
-            ^ctx:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^mod:impl ^:end-group-flag)
+            ^ctx:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^(module-link:unwrap mod:link) ^:end-group-flag)
         # Make symlinks
         Iter:map (fn (std:MapEntry: :to :from) -> {
             path = Path:join (Path:parent :file) :to
@@ -717,7 +776,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
 
     {
         file
-        impl = [:file,^mod:runtime]
+        link = [ModuleLink:DynamicLib :file,^Array:from <| Iter:map ModuleLink:DynamicLib mod:runtime]
         runtime = mod:runtime
         runtime-if-used = [:file,^:links]
         ^!std:if :include-headers { std:import {header-deps,header-dirs} = :mod } {}
@@ -808,13 +867,13 @@ static-library = context-fn :ctx (source = std:Path:or-source :source) {
 
         file = fcache {
             fs:create-dir <| Path:parent :file
-            run (String:format "creating static library {}" :filename) ctx:toolchain:tools:ar -crs :file ^mod:impl
+            run (String:format "creating static library {}" :filename) ctx:toolchain:tools:ar -crs :file ^(module-link:types [Object] mod:link)
             :file
         }
 
         Module: {
             file
-            impl = [:file]
+            link = [ModuleLink:StaticLib :file, ^module-link:subset [StaticLib,DynamicLib,Flag] mod:link]
             runtime = mod:runtime
             header-dirs = mod:header-dirs
             header-deps = mod:header-deps
@@ -918,7 +977,7 @@ exec-output = fn :ret (runtime-uses = default :rt-uses as []) ^:args -> {
 ## {{doc self:context}}
 ##
 ## # Modules
-## {{std:doc:modules :self type}}
+## {{std:doc:modules :self type module-link}}
 ##
 ## # Functions
 ## {{(std:doc:functions :self module all-files header-paths
@@ -927,11 +986,11 @@ exec-output = fn :ret (runtime-uses = default :rt-uses as []) ^:args -> {
 ##    get-output toolchain env-toolchain
 ##    compile-commands exec-output)}}
 {
-    ## Types used in the library values.
+    ## Types used in the library.
     ##
     ## # Types
-    ## {{std:doc:modules :self Module}}
-    type = {Module}
+    ## {{std:doc:modules :self Module ModuleLink}}
+    type = {Module, ModuleLink}
     context
     module
     compiled-module
@@ -946,4 +1005,5 @@ exec-output = fn :ret (runtime-uses = default :rt-uses as []) ^:args -> {
     exact-name
     compile-commands
     exec-output
+    module-link
 }

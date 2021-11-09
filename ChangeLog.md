@@ -1,5 +1,21 @@
 # ergo-c++ changelog
 
+## 0.10.0  -- 2021-11-08
+* Change the produced `impl` field of modules to be `link`, and change it to be
+  an array of `type:ModuleLink` types.
+* Add a `module-link` submodule with basic functions to extract values from the
+  `link` field.
+* Add `type:ModuleLink` to distinguish linked value types.
+* Fix dependency visibility errors being propagated (when checking header
+  dependencies).
+
+### Breaking Changes
+* Any use of `c++:compiled-module` will need to update the `link` field to have
+  `ModuleLink`-typed values.
+* Any use of `c++:get-output` will need to access the `link` field rather than
+  the `impl` field (and access the inner values appropriately with
+  `c++:module-link` functions).
+
 ## 0.9.8  -- 2021-11-02
 * Fix a bug in static library creation.
 
