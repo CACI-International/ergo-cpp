@@ -672,7 +672,7 @@ compiled-module = fn {
 eval-flags = context-fn :ctx {compile-flags, c-compile-flags, link-flags} :f -> {
     newctx = {
         ^:ctx
-        toolchain = {
+        Map :toolchain = {
             ^ctx:toolchain
             extra-compile-flags = !std:by-content :compile-flags
             extra-c-compile-flags = !std:by-content :c-compile-flags

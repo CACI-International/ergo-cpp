@@ -8,6 +8,8 @@
 * Add `type:ModuleLink` to distinguish linked value types.
 * Fix dependency visibility errors being propagated (when checking header
   dependencies).
+* Use correct toolchain identity when changing toolchain flags from function
+  arguments.
 
 ### Breaking Changes
 * Any use of `c++:compiled-module` will need to update the `link` field to have
