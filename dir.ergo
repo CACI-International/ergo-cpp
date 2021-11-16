@@ -375,18 +375,29 @@ module-link = {
 ## that will be used for includes that do not resolve to a file.
 set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :compiler :untracked-compile-flags :compile-flags (Map :known-headers) -> {
     deps = cache {
-        file-type = if :file-type [String:format "-x{}" :file-type] []
-        deps = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools::compiler
+        file-type-flag = if :file-type [String:format "-x{}" :file-type] []
+        result = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools::compiler
                 ^(!toolchain-compile-flags :toolchain :compiler) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
-                ^:compile-flags ^:file-type (!fs:track :file)):stdout | String:from | String:trim
-        String:format "{}: {}" _ :parts = :deps
-        (:parts
-        # Split on continuation newlines from make syntax
-        | String:split "\\\n"
-        # Split on spaces (XXX this will break on filenames with spaces)
-        | Iter:map (fn :p -> String:split " " :p) | Iter:flatten
-        # Remove empty parts
-        | Iter:filter (fn :v -> match :v ["" -> Bool:false,_ -> Bool:true]))
+                ^:compile-flags ^:file-type-flag (!fs:track :file))
+        deps = {
+            String:format "{}: {}" _ :parts = result:stdout | String:from | String:trim
+            (:parts
+            # Split on continuation newlines from make syntax
+            | String:split "\\\n"
+            # Split on spaces (XXX this will break on filenames with spaces)
+            | Iter:map (fn :p -> String:split " " :p) | Iter:flatten
+            # Remove empty parts
+            | Iter:filter (fn :v -> match :v ["" -> Bool:false,_ -> Bool:true]))
+        }
+        failure = {
+            std:log:warn <| String:format "Couldn't determine dependencies for {}" :file
+            match :file-type [
+                c++-header -> std:log:warn result:stderr
+                _ -> Error: result:stderr
+            ]
+            Iter:from []
+        }
+        if result:exit-status :deps :failure
     }
     # split files based on whether they exist or not
     {exist,to-check} = cache {
