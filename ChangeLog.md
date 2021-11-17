@@ -1,5 +1,10 @@
 # ergo-c++ changelog
 
+## 0.10.1  -- 2021-11-17
+* Improve the behavior of header dependency checking when the compiler fails.
+  * Failures are inevitably due to preprocessor behavior which is difficult to
+    account for, so reduce the errors to warnings (for header files).
+
 ## 0.10.0  -- 2021-11-08
 * Change the produced `impl` field of modules to be `link`, and change it to be
   an array of `type:ModuleLink` types.
