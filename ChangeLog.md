@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Update scripts for ergo-1.0.0rc.1.
+* Improve correctness/safety of configuration-based caching.
+
 ## 0.10.1  -- 2021-11-17
 * Improve the behavior of header dependency checking when the compiler fails.
   * Failures are inevitably due to preprocessor behavior which is difficult to

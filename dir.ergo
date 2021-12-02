@@ -237,24 +237,29 @@ cached-path = fn :cache-policy :path :depends -> {
             get-value = fn :v -> {
                 # Get the file which tracks the last writer
                 last-writer-file = cache <| !std:variable (depends = [last-writer, :out]) (Path:new ())
+                # Get a synchronization resource for accessing the file
+                last-writer-sync = cache ^no-persist <| std:sync:resource [last-writer-sync, :out] 1
                 # Create a string which tracks the argument
                 String :me = std:identity :v
-                # Read the last writer, if any.
-                String :last-writer = match ^allow-error (fs:read :last-writer-file) [
-                    Error _ -> ""
-                    :bs -> String:from :bs
-                ]
-                # Shortcut and return `out` if the last writer was this value.
-                # The returned value should have the same identity as `v`
-                Path :p = match :last-writer [
-                    !:me -> :out
-                    _ -> {
-                        fs:remove :last-writer-file
-                        :v
-                        fs:write :last-writer-file :me
-                        :out
-                    }
-                ]
+                # Attomically access the file
+                Path :p = std:sync:consume :last-writer-sync {
+                    # Read the last writer, if any.
+                    String :last-writer = match ^allow-error (fs:read :last-writer-file) [
+                        Error _ -> ""
+                        :bs -> String:from :bs
+                    ]
+                    # Shortcut and return `out` if the last writer was this value.
+                    # The returned value should have the same identity as `v`
+                    match :last-writer [
+                        !:me -> :out
+                        _ -> {
+                            fs:remove :last-writer-file
+                            :v
+                            fs:write :last-writer-file :me
+                            :out
+                        }
+                    ]
+                }
                 !std:variable (depends = :v) :p
             }
             [:out,:get-value]
