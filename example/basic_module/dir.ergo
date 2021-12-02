@@ -1,7 +1,7 @@
 c++ = workspace:c++
 
 c++:module {
-    files = c++:all-files:
+    files = c++:all-files()
     headers = c++:header-paths {
         addition = all
     }

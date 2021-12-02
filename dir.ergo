@@ -336,7 +336,7 @@ module-link = {
     ##
     ## Returns an Array.
     types = fn (Array:Of :String |> :types) :link -> Array:from <| Iter:map (fn {val} -> :val) <| Iter:filter (fn :a -> :a) <| Iter:map (fn (ModuleLink :x) -> match :x [
-        ^Array:from <| Iter:map (fn :type -> ModuleLink:(!:type) :s -> {val = :s}) :types
+        ^Array:from <| Iter:map (fn :type -> ModuleLink::type :s -> {val = :s}) :types
         _ -> std:Bool:false
     ]) :link
 
@@ -348,7 +348,7 @@ module-link = {
     ##
     ## Returns an Array of ModuleLink.
     subset = fn (Array:Of :String |> :types) :link -> Array:from <| Iter:map (fn {val} -> :val) <| Iter:filter (fn :a -> :a) <| Iter:map (fn (ModuleLink :x) -> match :x [
-        ^Array:from <| Iter:map (fn :type -> std:bind:and :v (ModuleLink:(!:type) _) -> {val = :v}) :types
+        ^Array:from <| Iter:map (fn :type -> std:bind:and :v (ModuleLink::type _) -> {val = :v}) :types
         _ -> std:Bool:false
     ]) :link
 
@@ -358,7 +358,7 @@ module-link = {
     ##
     ## Returns an Array of ModuleLink.
     map = fn (std:Function :f) :link -> Array:from <| Iter:map (fn (ModuleLink :x) -> match :x [
-        ^Array:from <| Iter:map (fn :type -> ModuleLink:(!:type) :s -> ModuleLink::type <| f :s) [Object,StaticLib,DynamicLib,Flag]
+        ^Array:from <| Iter:map (fn :type -> ModuleLink::type :s -> ModuleLink::type <| f :s) [Object,StaticLib,DynamicLib,Flag]
         _ -> std:Bool:false
     ]) :link
 
@@ -415,9 +415,11 @@ glob-src = fn :dir :pattern -> fs:glob <| Path:join :dir :pattern
 
 ## Get `files` in the current script directory.
 ##
+## Arguments: `()`
+##
 ## The return value is suitable to be passed directly as the `files` key in the `module`
 ## configuration.
-all-files = fn (dir = std:Path:or-source ^parent :dir) -> glob-src :dir *.cpp
+all-files = fn () (dir = std:Path:or-source ^parent :dir) -> glob-src :dir *.cpp
 
 ## Get `headers` from a heirarchical description.
 ##
