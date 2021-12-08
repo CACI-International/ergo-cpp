@@ -241,7 +241,7 @@ cached-path = fn :cache-policy :path :depends -> {
                 last-writer-sync = cache ^no-persist <| std:sync:resource [last-writer-sync, :out] 1
                 # Create a string which tracks the argument
                 String :me = std:identity :v
-                # Attomically access the file
+                # Atomically access the file
                 Path :p = std:sync:consume :last-writer-sync {
                     # Read the last writer, if any.
                     String :last-writer = match ^allow-error (fs:read :last-writer-file) [
