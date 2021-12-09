@@ -1,4 +1,4 @@
-std:import {fs, match, Iter, Path} = std:
+std:import {fs, match, Iter, Path} = :std
 
 c++ = ergo ..
 project-root = std:source:dir ()
@@ -32,6 +32,11 @@ run = fn :p -> c++:exec-output <| build :debug-toolchain :p
 
 write-commands = fn :result -> fs:copy (c++:compile-commands :result) :project-root
 
+## Commands include:
+## * `debug TARGET`
+## * `release TARGET`
+## * `run TARGET`
+## * `compile-commands (debug|release) TARGET`
 command = match:value [
     fn debug :p -> debug :p
     fn release :p -> release :p
@@ -40,4 +45,6 @@ command = match:value [
     fn compile-commands release :p -> write-commands <| build :release-toolchain :p
 ]
 
+##std:doc:module
+## workspace
 {command, c++}

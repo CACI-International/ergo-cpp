@@ -1,7 +1,7 @@
-std:import {c++} = workspace:
+c++ = workspace:c++
 
 module = c++:module {
-    files = c++:all-files:
+    files = c++:all-files ()
     uses = [c++:dynamic-library {name=add2, module = ergo ../basic_module, abi-version=1}]
 }
 

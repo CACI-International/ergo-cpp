@@ -1,7 +1,7 @@
-std:import {c++} = workspace:
+c++ = workspace:c++
 
 module = c++:module {
-    files = c++:all-files:
+    files = c++:all-files()
     uses = [ergo ../basic_module]
 }
 
