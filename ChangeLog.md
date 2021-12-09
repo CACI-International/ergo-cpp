@@ -1,5 +1,12 @@
 # ergo-c++ changelog
 
+## 0.11.1  -- 2021-12-09
+* Always include `-fPIC` by default.
+  * This is less surprising when it comes to linking and also allows for more
+    sharing of cached object files.
+* Fix a caching bug resulting from the cached file dependency results being
+  misidentified.
+
 ## 0.11.0  -- 2021-12-08
 * Update scripts for ergo-1.0.0rc.1.
 * Improve correctness/safety of configuration-based caching.

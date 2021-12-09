@@ -287,14 +287,19 @@ compile = fn :cache-policy :toolchain :project-root :file :compiler :untracked-f
 
     [:out,:ocache] = cached-path :cache-policy :out [:proj-path, toolchain:tools::compiler, !toolchain-compile-flags :toolchain :compiler, :flags]
 
+    # Always enable PIC by default; this works better for not surprising people with code that
+    # can't be linked into a dynamic library (either objects or static libraries). The user can
+    # always use `-fno-PIC` to undo this.
+    args = Array:from <| Iter:flatten [[toolchain:tools::compiler,-fPIC,-c,-o,:out], toolchain-compile-flags :toolchain :compiler, !std:variable :untracked-flags, :flags, [:file]]
+
     {
         object = ocache {
             fs:create-dir <| Path:parent :out
-            run "compiling ^file" (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools::compiler ^(toolchain-compile-flags :toolchain :compiler) -c -o :out ^(!std:variable :untracked-flags) ^:flags :file
+            run "compiling ^file" (env = { PATH = paths-to-path-var toolchain:paths }) ^:args
             :out
         }
         compile-command = {
-            arguments = Array:from <| Iter:map String:from <| Iter:flatten [[toolchain:tools::compiler], toolchain-compile-flags :toolchain :compiler, [-c,-o,:out], !std:variable :untracked-flags, :flags, [:file]]
+            arguments = Array:from <| Iter:map String:from :args
             file = String:from :file
             output = String:from :out
             directory = "/"
@@ -394,9 +399,9 @@ set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :compi
             | Iter:filter (fn :v -> match :v ["" -> Bool:false,_ -> Bool:true]))
         }
         failure = {
-            std:log:warn "Couldn't determine dependencies for ^file"
+            log:warn "Couldn't determine dependencies for ^file"
             match :file-type [
-                c++-header -> std:log:warn result:stderr
+                c++-header -> log:warn result:stderr
                 _ -> Error:@ result:stderr
             ]
             Iter:from []
@@ -409,7 +414,7 @@ set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :compi
     }
     Array :exist-depends = Array:from <| Iter:map fs:track :exist
     banned-check = if :banned-headers (fn :x -> if banned-headers::x { std:Error:@ (source=:file) "private include (^x) used in public header ^file" }) else (fn _ -> ())
-    String :id = cache {
+    String :id = std:by-content <| cache {
         Array :known-depends = Array:from <| Iter:no-errors <| Iter:map (fn :dep -> !std:eval <| match known-headers::dep [ std:Unset _ -> banned-check :dep, :v -> :v ]) :to-check
         std:identity [:exist-depends, :known-depends, !fs:track :file, toolchain:tools::compiler, !toolchain-compile-flags :toolchain :compiler, :compile-flags]
     }
@@ -843,9 +848,6 @@ dynamic-library = fn (source = std:Path:or-source :source) {
     link-flags = default (Array :link-flags) as []
     abi-version = std:optional (String :abi-version)
 } -> {
-    # Must always have -fPIC when compiling code in a shared library.
-    compile-flags = [^:compile-flags,-fPIC]
-    c-compile-flags = [^:c-compile-flags,-fPIC]
     eval-flags {compile-flags,c-compile-flags,link-flags} <| fn :extra-link-flags -> {
         link ^{abi-version} :source (rename dynamic-library-name :name) :module [-shared,^:extra-link-flags] "dynamic library" Bool:true
     }
