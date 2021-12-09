@@ -1,6 +1,6 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.11.0  -- 2021-12-08
 * Update scripts for ergo-1.0.0rc.1.
 * Improve correctness/safety of configuration-based caching.
 
