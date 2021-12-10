@@ -1,6 +1,6 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.11.2  -- 2021-12-10
 * Pretty-print `compile_commands.json`.
 
 ## 0.11.1  -- 2021-12-09
