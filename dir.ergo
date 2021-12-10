@@ -946,7 +946,7 @@ compile-commands = fn ^:outputs -> {
     file = Path:join :path compile_commands.json
     commands = !Array:from <| Iter:unique <| Iter:flatten <| Iter:map (fn :o -> o:compile-commands) outputs:positional
     fs:create-dir :path
-    fs:write :file <| std:json:stringify :commands
+    fs:write :file <| std:json:stringify ^pretty :commands
     :file
 }
 

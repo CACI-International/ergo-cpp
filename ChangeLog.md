@@ -1,5 +1,8 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Pretty-print `compile_commands.json`.
+
 ## 0.11.1  -- 2021-12-09
 * Always include `-fPIC` by default.
   * This is less surprising when it comes to linking and also allows for more
