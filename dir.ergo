@@ -62,7 +62,7 @@ paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map
 toolchain = fn {
     paths = default (Array:Of :Path |> :paths) as !:split-path-var
     target-triple
-    override = default (Map:Of :String :Path |> :override) as {}
+    override = default (Map:Of :String std:Any |> :override) as {}
 
     compile-flags = default :compile-flags as []
     c-compile-flags = default :c-compile-flags as []
@@ -100,7 +100,8 @@ toolchain = fn {
         cache ^no-persist <| if :result {
             log:info "Found tool `^tool` at `^result`"
         } else {
-            log:warn "Could not find tool `^tool`"
+            override = match override::tool [String :name -> " (overriden as `^name`)", _ -> ""]
+            log:warn "Could not find tool `^tool`^override"
         }
         :result
     }
@@ -208,6 +209,7 @@ env-toolchain = {
 
     map-values = fn :f :m -> Map:from <| Iter:map (fn :e -> std:MapEntry:@ e:key (!std:eval <| f e:value)) :m
 
+    ##std:doc:value
     ## A toolchain based on the environment.
     ## 
     ## This toolchain is derived from the following environment variables:

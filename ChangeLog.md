@@ -1,5 +1,11 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Correctly categorize `env-toolchain` in documentation (to prevent it from
+  being evaluated prematurely among other things), and allow strings to be
+  passed as `toolchain` overrides (which was the intention based on
+  documentation but was not realized in the types provided).
+
 ## 0.11.2  -- 2021-12-10
 * Pretty-print `compile_commands.json`.
 
