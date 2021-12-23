@@ -483,7 +483,11 @@ context-fn = pat :ctx ^:rest -> :v -> {
 }
 
 ## Convert a path to an include string.
-path-to-include = fn :p -> String:join "/" <| Path:split :p
+path-to-include = fn :p -> String:join "/" <| match (Path:split :p) [
+    # Remove a leading `.`, if any
+    [.,^:rest] -> :rest
+    :rest -> :rest
+]
 
 modules = Array:Of :Module
 match-uses = pat :tgt -> match:value [
