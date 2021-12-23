@@ -1,6 +1,6 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.11.3  -- 2021-12-23
 * Correctly categorize `env-toolchain` in documentation (to prevent it from
   being evaluated prematurely among other things), and allow strings to be
   passed as `toolchain` overrides (which was the intention based on
