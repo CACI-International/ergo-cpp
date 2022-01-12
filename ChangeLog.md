@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## 0.11.4  -- 2022-01-12
+* Don't deduplicate module `header-dirs` fields to allow consumers to use these
+  to convey disparate metadata for the same root header directory.
+
 ## 0.11.3  -- 2021-12-23
 * Correctly categorize `env-toolchain` in documentation (to prevent it from
   being evaluated prematurely among other things), and allow strings to be
