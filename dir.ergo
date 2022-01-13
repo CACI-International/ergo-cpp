@@ -25,11 +25,13 @@ os-libpath-env = fn :os -> match :os [
     _ -> PATH
 ]
 
+system-path-separator = match std:env:os [windows -> ";", _ -> ":"]
+
 system-libpath-env = os-libpath-env std:env:os
 
-split-paths = fn (default :paths as "") -> (:paths | String:split ":" | Iter:map Path:from | Array:from)
+split-paths = fn (default :paths as "") -> (:paths | String:split :system-path-separator | Iter:map Path:from | Array:from)
 
-paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map String:from :paths
+join-paths = fn (Array:Of :Path |> :paths) -> String:join :system-path-separator <| Iter:map String:from :paths
 
 ## Create a toolchain from the given configuration.
 ##
@@ -122,7 +124,7 @@ toolchain = fn {
         :result
     }
 
-    tc-env = (Map:from <| Iter:map (fn (std:MapEntry:@ :k :ps) -> std:MapEntry:@ :k (paths-to-path-var :ps)) <|
+    tc-env = (Map:from <| Iter:map (fn (std:MapEntry:@ :k :ps) -> std:MapEntry:@ :k (join-paths :ps)) <|
         std:merge { PATH = :paths } { :(!String :system-libpath-env) = :library-paths }
         )
 

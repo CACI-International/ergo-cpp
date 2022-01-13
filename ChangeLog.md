@@ -1,5 +1,8 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Correctly handle windows env variable path separators.
+
 ## 0.11.5  -- 2022-01-13
 * Add a `library-paths` optional argument to `toolchain` to ensure toolchains
   that require library paths in the environment are accounted for.
