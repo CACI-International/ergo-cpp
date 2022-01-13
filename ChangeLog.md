@@ -2,6 +2,8 @@
 
 ## Unreleased
 * Correctly handle windows env variable path separators.
+* Revert the 0.11.4 change as it causes unacceptable quadratic memory behavior
+  which is detrimental in large projects with a lot of nesting.
 
 ## 0.11.5  -- 2022-01-13
 * Add a `library-paths` optional argument to `toolchain` to ensure toolchains

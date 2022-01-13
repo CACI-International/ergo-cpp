@@ -558,10 +558,7 @@ vis = {
 eval-uses = fn :uses -> {
     uses = vis:map (std:Function:partial Iter:map (fn (Module:@ :u) -> :u)) :uses
     int-ext = vis:eval :uses
-    # Don't `Iter:unique` the header-dirs to allow consumers to use the same directory to possibly
-    # provide distinct metadata information (in the case where multiple disparate things have the
-    # same root directory).
-    uses-header-dirs = vis:map* (fn :uses -> <| :uses | Iter:map (fn :m -> m:header-dirs) | Iter:flatten) :int-ext
+    uses-header-dirs = vis:map* (fn :uses -> <| :uses | Iter:map (fn :m -> m:header-dirs) | Iter:flatten | Iter:unique) :int-ext
     uses-header-deps = vis:map* (fn :uses -> <| :uses | Iter:map (fn :m -> m:header-deps) | Iter:filter (fn :a -> :a) | Iter:flatten | Map:from) :int-ext
     {
         uses = vis:all :uses
