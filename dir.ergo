@@ -13,13 +13,22 @@ script-dir = std:source:dir ()
 ## Return the value of an environment variable, or an alternative value if not set.
 env-or = fn :name :alternative -> default (env:get :name) as :alternative
 
-## Run an executable as a task (counting as one task).
-run = fn :description ^:args -> task (count = 1) :description (exec ^:args):complete
+## Run an exec result as a task (counting as one task).
+run = fn :description :result -> task (count = 1) :description result:complete
 
 # TODO divorce the linking/native/binutils stuff from c/c++, separate c and c++ into separate
 # libraries
 
-split-path-var = env:get PATH | String:split ":" | Iter:map Path:from | Array:from
+os-libpath-env = fn :os -> match :os [
+    linux -> LD_LIBRARY_PATH
+    std:bind:or macos ios -> DYLD_LIBRARY_PATH
+    _ -> PATH
+]
+
+system-libpath-env = os-libpath-env std:env:os
+
+split-paths = fn (default :paths as "") -> (:paths | String:split ":" | Iter:map Path:from | Array:from)
+
 paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map String:from :paths
 
 ## Create a toolchain from the given configuration.
@@ -28,6 +37,8 @@ paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map
 ## 
 ## The `config` may contain the following optional keys:
 ## * `paths` - Search paths containing the toolchain, defaults to the current `PATH`.
+## * `library-paths` - Search paths for library files for the toolchain, defaults to the current
+## (os-specific) library path.
 ## * `target-triple` - The target triple prefix to use when searching for tools.
 ## * `override` - Overridden names or paths of tools.
 ## * `compile-flags` - Flags to always pass to the C++ compiler when compiling source code.
@@ -36,9 +47,13 @@ paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map
 ##
 ## The returned toolchain is a map with the following keys:
 ## * `paths` - The provided `paths` value
+## * `library-paths` - The provided `library-paths` value
 ## * `target-triple` - The provided `target-triple` value
 ## * `override` - The provided `override` value
 ## * `tools` - The indexable collection of tools (e.g. `tools:c++`)
+## * `tool-exec-env` - Environment variables needed to exec tools (derived from `paths` and
+## `library-paths`).
+## * `exec` - A function to exec a tool with the environment set to `tool-exec-env`.
 ## * `compile-flags` - The compile flags to use with the C++ compiler
 ## * `c-compile-flags` - The compile flags to use with the C compiler
 ## * `link-flags` - The link flags to use when linking
@@ -60,7 +75,8 @@ paths-to-path-var = fn (Array:Of :Path |> :paths) -> String:join ":" <| Iter:map
 ##   library name.
 ##   * `exe-name` - A function that returns the filesystem name for a particular executable name.
 toolchain = fn {
-    paths = default (Array:Of :Path |> :paths) as !:split-path-var
+    paths = default (Array:Of :Path |> :paths) as !(split-paths <| env:get PATH)
+    library-paths = default (Array:Of :Path |> :library-paths) as !(split-paths <| env:get :system-libpath-env)
     target-triple
     override = default (Map:Of :String std:Any |> :override) as {}
 
@@ -106,10 +122,16 @@ toolchain = fn {
         :result
     }
 
+    tc-env = (Map:from <| Iter:map (fn (std:MapEntry:@ :k :ps) -> std:MapEntry:@ :k (paths-to-path-var :ps)) <|
+        std:merge { PATH = :paths } { :(!String :system-libpath-env) = :library-paths }
+        )
+
+    exec-tool = fn :name ^:args -> exec (env = :tc-env) tools::name ^:args
+
     detect = fn :filename -> {
         result = std:by-content <| cache {
             file = Path:join :script-dir detection :filename
-            exec-result = exec (env = { PATH = paths-to-path-var :paths }) tools:c++ ^:compile-flags -xc++-header -imacros cassert -E -P :file
+            exec-result = exec-tool c++ ^:compile-flags -xc++-header -imacros cassert -E -P :file
             exec-result:complete
             String:format "\"{}\"" :result = String:trim <| String:from exec-result:stdout
             :result
@@ -120,9 +142,12 @@ toolchain = fn {
 
     {
         paths
+        library-paths
         target-triple
         override
         tools
+        tool-exec-env = :tc-env
+        exec = :exec-tool
 
         compile-flags
         c-compile-flags
@@ -139,12 +164,7 @@ toolchain = fn {
             ]
 
             ## Get the environment variables that should be set to add a path to the library lookup path.
-            lib-path-env = match :os [
-                macos -> fn :path -> { DYLD_LIBRARY_PATH = :path }
-                ios   -> fn :path -> { DYLD_LIBRARY_PATH = :path }
-                linux -> fn :path -> { LD_LIBRARY_PATH = :path }
-                _     -> fn :path -> { PATH = :path }
-            ]
+            lib-path-env = fn :path -> { :(!String <| os-libpath-env :os) = :path }
 
             ## Get the environment variables that should be set to preload an array of libraries.
             ##
@@ -297,7 +317,7 @@ compile = fn :cache-policy :toolchain :project-root :file :compiler :untracked-f
     {
         object = ocache {
             fs:create-dir <| Path:parent :out
-            run "compiling ^file" (env = { PATH = paths-to-path-var toolchain:paths }) ^:args
+            run "compiling ^file" <| exec (env = toolchain:tool-exec-env) ^:args
             :out
         }
         compile-command = {
@@ -387,7 +407,7 @@ module-link = {
 set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :compiler :untracked-compile-flags :compile-flags (Map :known-headers) -> {
     deps = cache {
         file-type-flag = if :file-type "-x^file-type"
-        result = (exec (env = { PATH = paths-to-path-var toolchain:paths }) toolchain:tools::compiler
+        result = (toolchain:exec :compiler
                 ^(!toolchain-compile-flags :toolchain :compiler) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
                 ^:compile-flags :file-type-flag (!fs:track :file))
         deps = {
@@ -787,7 +807,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
 
     file = fcache {
         fs:create-dir <| Path:parent :file
-        (run "linking ^type ^name" (env = { PATH = paths-to-path-var ctx:toolchain:paths }) ctx:toolchain:tools:c++
+        (run "linking ^type ^name" <| ctx:toolchain:exec c++
             ^ctx:toolchain:link-flags ^:additional-flags ^:abi-flags -o :file ^:start-group-flag ^(module-link:unwrap mod:link) ^:end-group-flag)
         # Make symlinks
         Iter:map (fn (std:MapEntry:@ :to :from) -> {
@@ -889,7 +909,7 @@ static-library = context-fn :ctx (source = std:Path:or-source :source) {
 
         file = fcache {
             fs:create-dir <| Path:parent :file
-            run "creating static library ^filename" ctx:toolchain:tools:ar -crs :file ^(module-link:types [Object] mod:link)
+            run "creating static library ^filename" <| ctx:toolchain:exec ar -crs :file ^(module-link:types [Object] mod:link)
             :file
         }
 

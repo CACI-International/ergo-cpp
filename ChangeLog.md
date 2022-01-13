@@ -1,5 +1,11 @@
 # ergo-c++ changelog
 
+## 0.11.5  -- 2022-01-13
+* Add a `library-paths` optional argument to `toolchain` to ensure toolchains
+  that require library paths in the environment are accounted for.
+* Add a `tool-exec-env` map and an `exec` function to the value returned from
+  `toolchain` to make executing toolchain binaries less error-prone.
+
 ## 0.11.4  -- 2022-01-12
 * Don't deduplicate module `header-dirs` fields to allow consumers to use these
   to convey disparate metadata for the same root header directory.
