@@ -1,6 +1,6 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.11.6  -- 2022-01-13
 * Correctly handle windows env variable path separators.
 * Revert the 0.11.4 change as it causes unacceptable quadratic memory behavior
   which is detrimental in large projects with a lot of nesting.
