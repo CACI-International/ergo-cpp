@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Properly set the `runtime-if-used` field for `compiled-module`s based on the
+  link arguments.
+
 ## 0.11.6  -- 2022-01-13
 * Correctly handle windows env variable path separators.
 * Revert the 0.11.4 change as it causes unacceptable quadratic memory behavior

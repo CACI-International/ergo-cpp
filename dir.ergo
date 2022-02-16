@@ -672,7 +672,8 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
 ## The configuration should be a map with the following optional keys:
 ## * `(Array:Of :ModuleLink) :link` - object files/libraries to link
 ## * `(Array:Of :Path) :include-dirs` - include directories
-## * `(Array:Of :Path) :runtime` - libraries (typically dynamic) needed at runtime
+## * `(Array:Of :Path) :runtime` - libraries (typically dynamic) needed at runtime. Any
+##   `ModuleLink:Dynamic` libraries from `link` are automatically considered runtime dependencies.
 ## * `(Map :header-deps)` - a map from include path to header file path, which helps in resolving header dependencies
 ## * `Array :compile-commands` - an array of compile commands that are used to produce the module,
 ##   where items are maps with:
@@ -709,8 +710,9 @@ compiled-module = fn {
     evaled = eval-uses :uses
     header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [:includes, :header-dirs]) evaled:header-dirs
     header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps, :header-deps]) evaled:header-deps
+    runtime-if-used = module-link:types [DynamicLib] :link
 
-    module-result evaled:uses { link, runtime, compile-commands, header-dirs, header-deps, ^:rest }
+    module-result evaled:uses { link, runtime, compile-commands, header-dirs, header-deps, runtime-if-used, ^:rest }
 }
 
 eval-flags = context-fn :ctx {compile-flags, c-compile-flags, link-flags} :f -> {
