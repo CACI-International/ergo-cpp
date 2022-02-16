@@ -644,8 +644,9 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
     # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
     # ban internal header-deps so that if they are used, an error will occur about exposing a private module
     Array :mod-header-deps = Array:from <| Iter:no-errors <| Iter:map (fn (std:MapEntry:@ :to :from) -> !{
+        include-flags = match ctx:options:include-dependencies [accurate -> :includes, relaxed -> [-I,:header-dir]]
         v = (!std:eval <| set-file-deps (banned-headers = evaled:header-deps:internal) (file-type = c++-header)
-            ctx:toolchain :from c++ [-I,:header-dir] :compile-flags evaled:header-deps:external)
+            ctx:toolchain :from c++ :include-flags :compile-flags evaled:header-deps:external)
         :v # if `v` is an error, fail fast
         std:MapEntry:@ (!String <| path-to-include :to) :v
     }) :headers
@@ -656,7 +657,8 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
             std:bind:or c C -> { compiler = cc, flags = :c-compile-flags }
             _ -> { compiler = c++, flags = :compile-flags }
         ]
-        f = !std:eval <| set-file-deps ctx:toolchain :f :compiler :includes :flags header-deps:internal
+        include-flags = match ctx:options:include-dependencies [accurate -> :includes, relaxed -> []]
+        f = !std:eval <| set-file-deps ctx:toolchain :f :compiler :include-flags :flags header-deps:internal
         compile ctx:options:cache-policy ctx:toolchain ctx:project-root :f :compiler :includes ^:flags
     }) :files
     objects = Iter:map (fn :c -> ModuleLink:Object c:object) :compiles
@@ -927,8 +929,9 @@ static-library = context-fn :ctx (source = std:Path:or-source :source) {
 
 Options = pat :opts -> default {
     cache-policy = default :cache-policy as configuration
+    include-dependencies = default :include-dependencies as accurate
 } as {} -> {
-    bind :opts { cache-policy }
+    bind :opts { cache-policy, include-dependencies }
 }
 
 ## Get the output of a Module, using the given configuration.
@@ -950,6 +953,11 @@ Options = pat :opts -> default {
 ##        if you compile, change a file, compile again, and then revert the change, no recompilation
 ##        will occur because there will already be a compiled output in the cache. This is most
 ##        useful if switching between branches/commits often.
+##   * `:include-dependencies` - may be one of the following:
+##      * `accurate` (default) - when determining which files are dependended upon based on
+##        `#include`s, all `uses` include dependencies are evaluated
+##      * `relaxed` - no `uses` include dependencies are evaluated, which may (in rare,
+##        preprocessor-centric cases) result in failures to determine dependencies
 ##
 ## The configuration will be used to create the ergo-cpp context with the same keys, and this
 ## context will be used to evaulate `module`. Any additional unrecognized keys will be present as a

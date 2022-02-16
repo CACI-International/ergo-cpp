@@ -1,11 +1,13 @@
 # ergo-c++ changelog
 
-## Unreleased
+## 0.11.7  -- 2022-02-16
 * Properly set the `runtime-if-used` field for `compiled-module`s based on the
   link arguments.
 * Use the full includes when determining header dependencies.
   * In general this will behave better for weird header shenanigans, at the cost
     of possibly forcing dependent headers to be evaluated and accessible.
+  * Add an `include-dependencies` option which can be used to revert behavior to
+    the old method.
 
 ## 0.11.6  -- 2022-01-13
 * Correctly handle windows env variable path separators.
