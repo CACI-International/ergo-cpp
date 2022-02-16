@@ -656,7 +656,7 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
             std:bind:or c C -> { compiler = cc, flags = :c-compile-flags }
             _ -> { compiler = c++, flags = :compile-flags }
         ]
-        f = !std:eval <| set-file-deps ctx:toolchain :f :compiler [] :flags header-deps:internal
+        f = !std:eval <| set-file-deps ctx:toolchain :f :compiler :includes :flags header-deps:internal
         compile ctx:options:cache-policy ctx:toolchain ctx:project-root :f :compiler :includes ^:flags
     }) :files
     objects = Iter:map (fn :c -> ModuleLink:Object c:object) :compiles

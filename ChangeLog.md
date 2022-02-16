@@ -3,6 +3,9 @@
 ## Unreleased
 * Properly set the `runtime-if-used` field for `compiled-module`s based on the
   link arguments.
+* Use the full includes when determining header dependencies.
+  * In general this will behave better for weird header shenanigans, at the cost
+    of possibly forcing dependent headers to be evaluated and accessible.
 
 ## 0.11.6  -- 2022-01-13
 * Correctly handle windows env variable path separators.
