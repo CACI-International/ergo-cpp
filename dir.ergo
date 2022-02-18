@@ -574,6 +574,10 @@ module-result = fn :all-uses { link, runtime, compile-commands, header-dirs, hea
         Iter:map (fn :m -> m:link) :all-uses | Iter:flatten
         :link
     ]
+    Array :runtime-direct* = Array:from <| Iter:unique <| Iter:flatten [
+        Iter:map (fn :m -> m:runtime-if-used) :all-uses | Iter:filter (fn :a -> :a) | Iter:flatten
+        Iter:map (fn :m -> m:runtime-direct*) :all-uses | Iter:filter (fn :a -> :a) | Iter:flatten
+    ]
     Array :runtime = Array:from <| Iter:unique <| Iter:flatten [
         Iter:map (fn :m -> m:runtime) :all-uses | Iter:flatten
         Iter:map (fn :m -> m:runtime-if-used) :all-uses | Iter:filter (fn :a -> :a) | Iter:flatten
@@ -584,7 +588,7 @@ module-result = fn :all-uses { link, runtime, compile-commands, header-dirs, hea
         :compile-commands
     ]
 
-    { link, header-dirs = header-dirs:external, header-deps = header-deps:external, runtime, compile-commands, ^:rest }
+    { link, header-dirs = header-dirs:external, header-deps = header-deps:external, runtime, runtime-direct*, compile-commands, ^:rest }
 }
 
 ## Create a module with the given configuration.
@@ -714,7 +718,12 @@ compiled-module = fn {
     header-deps = vis:map* (fn :uses-header-deps -> Map:from <| Iter:flatten [:uses-header-deps, :header-deps]) evaled:header-deps
     runtime-if-used = module-link:types [DynamicLib] :link
 
-    module-result evaled:uses { link, runtime, compile-commands, header-dirs, header-deps, runtime-if-used, ^:rest }
+    result = module-result evaled:uses { link, runtime, compile-commands, header-dirs, header-deps, runtime-if-used, ^:rest }
+    {
+        ^:result
+        runtime-direct = result:runtime-direct*
+        runtime-direct* = :unset
+    }
 }
 
 eval-flags = context-fn :ctx {compile-flags, c-compile-flags, link-flags} :f -> {
@@ -826,6 +835,7 @@ link = context-fn :ctx ^{abi-version = default :abi-version as ()} (Path :source
         file
         link = [ModuleLink:DynamicLib :file,^Array:from <| Iter:map ModuleLink:DynamicLib mod:runtime]
         runtime = mod:runtime
+        runtime-direct = mod:runtime-direct*
         runtime-if-used = [:file,^:links]
         ^!if :include-headers { std:import {header-deps,header-dirs} = :mod } else {}
         compile-commands = mod:compile-commands

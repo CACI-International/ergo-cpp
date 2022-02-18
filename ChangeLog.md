@@ -1,5 +1,9 @@
 # ergo-c++ changelog
 
+## 0.11.8  -- 2022-02-18
+* Add a `runtime-direct` field to linked modules to indicate the direct runtime
+  dependencies (excluding secondary dependencies).
+
 ## 0.11.7  -- 2022-02-16
 * Properly set the `runtime-if-used` field for `compiled-module`s based on the
   link arguments.
