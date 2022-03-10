@@ -1019,9 +1019,7 @@ exec-output = fn :ret (runtime-uses = default :rt-uses as []) ^:args -> {
     rt-env = match env:os [
         windows -> { PATH = :libpath }
         macos -> { DYLD_LIBRARY_PATH = :libpath }
-        # Use preloaded libraries when possible; this avoids issues with filenames not
-        # matching linked dependency names (from, e.g., SONAME)
-        linux -> { LD_PRELOAD = String:join ":" <| Iter:map String:from :runtime }
+        linux -> { LD_LIBRARY_PATH = :libpath }
     ]
     exec ret:file ^:args (env = { ^default args:keyed:env as {}, ^:rt-env })
 }

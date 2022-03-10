@@ -1,5 +1,12 @@
 # ergo-c++ changelog
 
+## 0.11.9  -- 2022-03-09
+* Use `LD_LIBRARY_PATH` rather than `LD_PRELOAD` for `exec-output` on linux, as
+  this interacts better with llvm-symbolizer (used by sanitizers).
+  * Previously we favored `LD_PRELOAD` because it avoids caring about file
+    SONAMEs, but we've long had the runtime (e.g. abi symlinks) as part of the
+    files so it shouldn't be an issue.
+
 ## 0.11.8  -- 2022-02-18
 * Add a `runtime-direct` field to linked modules to indicate the direct runtime
   dependencies (excluding secondary dependencies).
