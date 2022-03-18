@@ -409,9 +409,13 @@ module-link = {
 set-file-deps = fn ^{ banned-headers, file-type } :toolchain (Path :file) :compiler :untracked-compile-flags :compile-flags (Map :known-headers) -> {
     deps = cache {
         file-type-flag = if :file-type "-x^file-type"
-        result = (toolchain:exec :compiler
+        result = task (count=1) "determining dependencies of ^file" {
+            result = (toolchain:exec :compiler
                 ^(!toolchain-compile-flags :toolchain :compiler) -DERGO_CPP_HEADER_DEPENDS -MM -MG ^(!std:variable :untracked-compile-flags)
                 ^:compile-flags :file-type-flag (!fs:track :file))
+            result:complete
+            :result
+        }
         deps = {
             String:format "{}: {}" _ :parts = result:stdout | String:from | String:trim
             (:parts
@@ -648,9 +652,12 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
     # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
     # ban internal header-deps so that if they are used, an error will occur about exposing a private module
     Array :mod-header-deps = Array:from <| Iter:no-errors <| Iter:map (fn (std:MapEntry:@ :to :from) -> !{
-        include-flags = match ctx:options:include-dependencies [accurate -> :includes, relaxed -> [-I,:header-dir]]
-        v = (!std:eval <| set-file-deps (banned-headers = evaled:header-deps:internal) (file-type = c++-header)
-            ctx:toolchain :from c++ :include-flags :compile-flags evaled:header-deps:external)
+        # include-flags = match ctx:options:include-dependencies [accurate -> :includes, relaxed -> [-I,:header-dir]]
+        v = !std:eval <| match ctx:options:include-dependencies [
+            accurate -> !fs:track :from
+            relaxed -> (set-file-deps (banned-headers = evaled:header-deps:internal) (file-type = c++-header)
+                ctx:toolchain :from c++ [-I,:header-dir] :compile-flags evaled:header-deps:external)
+        ]
         :v # if `v` is an error, fail fast
         std:MapEntry:@ (!String <| path-to-include :to) :v
     }) :headers

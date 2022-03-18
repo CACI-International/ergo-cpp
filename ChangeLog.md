@@ -1,5 +1,16 @@
 # ergo-c++ changelog
 
+## 0.11.10  -- 2022-03-18
+* Change header dependency checks to be run as tasks (mainly to limit
+  concurrency, but also to illuminate what's going on to users).
+* Don't run header dependency checks on headers themselves when
+  `include-dependencies` is `accurate` (the default), as it is unnecessary in
+  that case: that information is only used to reconstruct missing dependencies,
+  which only happens in `relaxed` mode.
+* XXX: Since 0.11.7, public/private header dependency checking has been broken
+  (since it relied on headers not resolving). In general the dependency checking
+  should be refactored to make it more consistent and enable better features.
+
 ## 0.11.9  -- 2022-03-09
 * Use `LD_LIBRARY_PATH` rather than `LD_PRELOAD` for `exec-output` on linux, as
   this interacts better with llvm-symbolizer (used by sanitizers).
