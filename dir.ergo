@@ -1018,7 +1018,7 @@ compile-commands = fn ^:outputs -> {
 ##
 ## Returns the result of running `exec`.
 exec-output = fn :ret (runtime-uses = default :rt-uses as []) ^:args -> {
-    runtime = Iter:flatten [ret:runtime, Iter:map (fn :m -> m:runtime) :rt-uses | Iter:flatten]
+    runtime = Iter:flatten [ret:runtime, Iter:map (fn :m -> m:runtime) :rt-uses | Iter:flatten] | Iter:unique
     libpath = cache <| Path:with-output <| fn :libpath -> {
         fs:create-dir :libpath # Ensure path exists if empty
         Array:from <| Iter:map (fn :f -> fs:copy :f :libpath) :runtime

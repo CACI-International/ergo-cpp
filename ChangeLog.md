@@ -1,5 +1,8 @@
 # ergo-c++ changelog
 
+## Unreleased
+* Properly unique the runtime files in `exec-output`.
+
 ## 0.11.10  -- 2022-03-18
 * Change header dependency checks to be run as tasks (mainly to limit
   concurrency, but also to illuminate what's going on to users).
