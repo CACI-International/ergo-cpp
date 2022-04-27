@@ -1,6 +1,8 @@
 # ergo-c++ changelog
 
 ## Unreleased
+
+## 0.11.11  -- 2022-04-27
 * Properly unique the runtime files in `exec-output`.
 * Fix a bug in file dependency tracking: when `include-dependencies` is
   `accurate` (the default), if an dependent header path changed, the file
