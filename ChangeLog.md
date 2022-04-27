@@ -2,6 +2,9 @@
 
 ## Unreleased
 * Properly unique the runtime files in `exec-output`.
+* Fix a bug in file dependency tracking: when `include-dependencies` is
+  `accurate` (the default), if an dependent header path changed, the file
+  dependencies were not recomputed.
 
 ## 0.11.10  -- 2022-03-18
 * Change header dependency checks to be run as tasks (mainly to limit
