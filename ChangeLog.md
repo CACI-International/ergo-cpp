@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.11.12  -- 2022-05-04
+* Fix a bug introduced in 0.11.11 which caused modules to recompile files if
+  they depended upon a module which had to recompile a file.
+
 ## 0.11.11  -- 2022-04-27
 * Properly unique the runtime files in `exec-output`.
 * Fix a bug in file dependency tracking: when `include-dependencies` is

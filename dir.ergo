@@ -647,7 +647,11 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
 
     header-dirs = vis:map* (fn :header-dirs -> Array:from <| Iter:flatten [[:header-dir], :header-dirs]) evaled:header-dirs
 
-    includes = to-includes header-dirs:internal
+    # Force evaluation of `header-dirs:internal` so we depend only on the resulting directories, not
+    # the modules as a whole. Otherwise dependent module identities affect recompilation, which
+    # includes if a dependent module had an object file that changed (which shouldn't affect
+    # compilation of files in this module).
+    includes = to-includes (!Array header-dirs:internal)
 
     # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
     # ban internal header-deps so that if they are used, an error will occur about exposing a private module
