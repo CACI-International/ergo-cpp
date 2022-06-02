@@ -1,0 +1,127 @@
+std:import { :Array, :Iter, :Path, :Unset } = $std
+std:import { :context-key } = ergo context
+
+Self = std:Type:new "ergo-cpp:Module"
+
+## Visit modules and their uses.
+##
+## Arguments: `:filter :map (optional :reduce) -> ^:modules`
+##
+## `filter` is called on `uses` of each module in `modules` to determine which dependent modules
+## should be visited. `map` is called on each module and should return a type `T`. `reduce` is
+## called on an Iter of `T` and should return `T`.
+##
+## If omitted, `reduce` defaults to `Iter:flatten` (assuming `T` as `into $$Iter`).
+##
+## Returns `T`.
+visit = fn :filter :map ^(optargs (default :reduce as Iter:flatten)) -> std:recurse <| :self -> fn ^:modules -> {
+    reduce <| Iter:flatten <| Iter:map (fn (Self:@ :m) -> {
+        reduced-uses = self ^Array:from <| Iter:map (fn :u -> u:module) <| Iter:true <| Iter:map $filter m:uses
+        [map $m, $reduced-uses]
+    }) <| Array:from $modules
+}
+
+## Create a compile_commands.json file for all compile commands in the modules.
+##
+## Arguments: `^(Array:of $$Module |> :modules)`
+##
+## Returns a Path to a compile_commands.json file.
+compile-commands = fn ^:modules -> Path:for ~owned <| fn :path -> {
+    file = Path:join $path compile_commands.json
+    commands = Array:from <| Iter:unique {
+        visit (_ -> std:Bool:true) (fn (Self:@ :m) -> match m:compile-commands [
+            Array :cc -> $cc
+            _ -> []
+        ]) |> modules:positional
+    }
+    std:fs:create-dir $path
+    std:fs:write $file <| std:json:stringify ~pretty $commands
+    $file
+}
+
+## Execute the output of a module.
+##
+## Arguments: `:module ^:args`
+##
+## Keyword Arguments:
+## * `:runtime-uses` - an array of extra modules whose runtime should also be used as part of the
+## executable's runtime
+##
+## The module must provide an executable `output` key in the result (like `exe` does).
+##
+## Returns the `Child` result of running `std:exec`.
+exec = fn (Self:@ :module) ~(default :runtime-uses as []) ^:args -> {
+    runtime = Iter:unique <| Iter:flatten [
+        Unset:or module:runtime []
+        Iter:map (fn (Self:@ :m) -> Unset:or m:runtime []) $runtime-uses | Iter:flatten
+    ]
+    libpath = std:cache <| Path:for ~owned <| fn :libpath -> {
+        std:fs:create-dir $libpath # Ensure path exists if empty
+        Array:from <| Iter:map (fn :f -> std:fs:copy $f $libpath) $runtime
+    }
+    rt-env = match std:env:os [
+        windows -> { PATH = $libpath }
+        macos -> { DYLD_LIBRARY_PATH = $libpath }
+        linux -> { LD_LIBRARY_PATH = $libpath }
+    ]
+    std:exec module:output ^(std:merge $args <| fn ~env=$rt-env)
+}
+
+##std:doc:module
+## The Module type.
+##
+## Conceptually, a module aligns with the c++ module proposal; it represents everything needed for a
+## certain set of functionality to be exposed to other modules (i.e. other code). It groups the
+## exposed interfaces (headers) and the compiled code (objects/libraries/etc) that implements the
+## interfaces.
+##
+## Modules also include the Modules that they depend upon. This approach is more convenient than
+## each Module flattening dependent Module information, as retaining the dependency tree is valuable
+## to various other operations. Retaining the dependency tree also allows custom associated data to
+## be aggregated in application-specific ways, without having to e.g. define associated sum
+## functions. Retaining the dependency tree also allows custom associated data to be aggregated in
+## application-specific ways, without having to e.g. define associated semigroup join functions.
+##
+## The type holds a single value that should evaluate to a Map with the following optional keys:
+## * `Array :include` - header directories that need to be exposed to expose the module's features.
+## The contents must be Maps with the following keys:
+##   * `Path :dir` - the directory to include
+##   * `Map :files` (optional) - a mapping from include paths (as used in `#include "PATH"`) to the
+##   files to which they resolve. If this information is present, dependency checking will
+##   use the resolved files from the map and will also be able to check for dependency mistakes
+##   (like the use of private headers).
+## * `Array :link` - files that need to be linked (or link flags) to implement the module's
+## features. Elements should be `ModuleLink` values.
+## * `Array :uses` - the modules that this module uses. Each item must be a Map with the following
+## keys:
+##   * `Module :module` - the module
+##   * `:hide-include` - if set, indicates the module's `include`s (and those of any modules the
+##   module uses) won't be exposed.
+##   * `:hide-link` - if set, indicates the module's `link`s (and those of any modules the module
+##   uses) won't be exposed.
+##   The Map may contain other custom associative information.
+## * `Array :runtime` - files needed by the module's `link` components at runtime but that don't
+## need to be linked. Note that files that may not be directly needed by the `link` components (like
+## abi version symlinks) are appropriate here too.
+## * `Array :compile-commands` - compile commands associated with the module. Each value should be a
+## Map with the following keys (per `compile_commands.json` format):
+##   * `Array:of $$String |> :arguments` - the arguments (including compiler)
+##   * `String :file` - the input file
+##   * `String :output` - the output file
+##   * `String :directory` - the working directory ("/" if paths are absolute)
+## * `:output` - module-defined output value, e.g. a linked file
+## * `Map :custom` - extra information to add to the module. It is often best to namespace your
+## particular custom information in a key that's unlikely to be used by others.
+##
+## Once a module is created, it can be passed to other modules but should never be
+## evaluated/destructured until a context has been bound with `bind-context`.
+std:Type:modify $Self {
+    ## Create a new module. See `Module` documentation.
+    ##
+    ## Arguments: `:content`
+    new = fn :v -> Self:new (std:once $v)
+    @ = Self:@
+    visit
+    compile-commands
+    exec
+}

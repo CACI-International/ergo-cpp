@@ -1,0 +1,52 @@
+context-key = "ergo-cpp:context"
+
+##std:doc:value
+## The ergo-cpp context.
+##
+## This is a dynamic binding evaluating to a `Map` containing:
+## * `Path :project-root` - The root directory of the project.
+## * `:toolchain` - The toolchain to use (see `toolchain`)
+## * `Map :options` - Additional options affecting compilation and linking (see `Module:eval`).
+## * `Map :custom` - User-defined values.
+context = std:dynamic:get $context-key
+
+## Bind the context into a value (such as a Module).
+##
+## Arguments: `(Map :config) :value`
+##
+## The `config` includes:
+## * `Path :project-root` (required) - the project root directory, in which all source files to be
+##   compiled must exist. This is used so debug info can contain the relative directories of the
+##   files, and also determines caching keys.
+## * `:toolchain` - the toolchain to use
+## * `:options` - a map of options affecting behavior, including:
+##   * :cache-policy` - may be one of the following:
+##      * `configuration` (default) - Outputs are cached based on compilation flags.
+##        `exe`/`dynamic-library`/`static-library` outputs _must_ have unique names on a per-script
+##        basis. This is because the caching relies on the script path and name when determining the
+##        cache target file.
+##      * `content` - Outputs are cached based on compilation flags and file content. For example,
+##        if you compile, change a file, compile again, and then revert the change, no recompilation
+##        will occur because there will already be a compiled output in the cache. This is most
+##        useful if switching between branches/commits often.
+##
+## The configuration will be used to create the ergo-cpp context with the same keys, and this
+## context will be used to evaluate `value`. Any additional unrecognized keys will be present as a
+## map under the `custom` key in the context.
+##
+## Returns `value` with the context bound.
+bind-context = {
+    Options = fn :target -> std:default {
+        ~(std:default :cache-policy as configuration)
+    } as {} -> {
+        $target = { cache-policy }
+        ()
+    }
+
+    fn {
+        ~(Path :project-root)
+        ~(Map :toolchain)
+        ~(Options :options)
+        ^:custom
+    } :value -> std:dynamic:bind { :$context-key = { project-root, toolchain, options, custom } } :value
+}

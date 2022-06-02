@@ -1,0 +1,81 @@
+std:import { :Array, :Iter, :Function, :String, traits={Into={:into}} } = $std
+
+##std:doc:module
+## Module linking type.
+##
+## This type is used in the `link` field resulting from evaluating modules.
+##
+## It has the following String constructors:
+## `Object`, `StaticLib`, `DynamicLib`, `Flag`
+{
+    std:import { :enum, :index, :modify, :pass } = std:Type
+
+    ModuleLink = enum "ergo-cpp:ModuleLink" {
+        # These are all `pass` because we don't want to force evaluation of inner values (otherwise
+        # evaluation may end up serialized).
+        Object = $pass
+        StaticLib = $pass
+        DynamicLib = $pass
+        Flag = $pass
+    }
+
+    ## Get the inner ModuleLink values with the given types.
+    ##
+    ## Arguments: `(Array:of $$String |> :types) (into $$Iter |> :link)`
+    ##
+    ## Returns an Array.
+    types = fn (Array:of $String |> :types) (into $Iter |> :link) -> (
+        $link
+        | Iter:map (fn (ModuleLink :x) -> match $x [
+            ^Array:from <| Iter:map (fn :type -> ModuleLink:@:$type :s -> {val = $s}) $types
+            _ -> std:Bool:false
+            ])
+        | Iter:true
+        | Iter:map (fn {:val} -> $val)
+        | Array:from
+    )
+
+    ## Get the ModuleLink values with the given types.
+    ##
+    ## Arguments: `(Array:of $$String |> :types) (iter $$Iter |> :link)`
+    ##
+    ## This differ from `types` as it doesn't unwrap the inner values.
+    ##
+    ## Returns an Array of ModuleLink.
+    subset = fn (Array:of $String |> :types) (into $Iter |> :link) -> (
+        $link
+        | Iter:map (fn (ModuleLink :x) -> match $x [
+            ^Array:from <| Iter:map (fn :type -> std:bind:and :v (ModuleLink:@:$type _) -> {val = $v}) $types
+            _ -> std:Bool:false
+            ])
+        | Iter:true
+        | Iter:map (fn {:val} -> $val)
+        | Array:from
+    )
+
+    ## Map a function over the inner ModuleLink values.
+    ##
+    ## Arguments: `(Function :f) (into $$Iter |> :link)`
+    ##
+    ## Returns an Array of ModuleLink.
+    map = fn (Function :f) (into $Iter |> :link) -> (
+        $link
+        | Iter:map (fn (ModuleLink :x) -> match $x [
+            ^Array:from <| Iter:map (fn :type -> ModuleLink:@:$type :s -> ModuleLink:$type <| f $s) [Object,StaticLib,DynamicLib,Flag]
+            _ -> std:Bool:false
+            ])
+        | Array:from
+    )
+
+    ## Get the inner ModuleLink values.
+    ##
+    ## Arguments: `(into $$Iter |> :link)`
+    ##
+    ## Returns an Array.
+    unwrap = Function:partial $types [Object,StaticLib,DynamicLib,Flag]
+
+    modify $Self {
+        ^index $Self
+        map, subset, types, unwrap
+    }
+}

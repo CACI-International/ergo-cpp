@@ -1,0 +1,222 @@
+std:import {
+    :Array, :Iter, :Map, :MapEntry, :Path, :String
+    bind={:or}, :cache, :default, :env, :fs, :if, :match
+} = $std
+std:import { :log } = $workspace
+
+## Return the value of an environment variable, or an alternative value if not set.
+env-or = fn :name :alternative -> { default :val as $alternative = env:vars:$name; $val }
+
+system-path-separator = match env:os [windows -> ";", _ -> ":"]
+
+split-paths = fn (default :paths as "") -> ($paths | String:split $system-path-separator | Iter:map Path:from | Array:from)
+
+join-paths = fn (Array:of $Path |> :paths) -> String:join $system-path-separator <| Iter:map String:from $paths
+
+os-libpath-env = fn :os -> match $os [
+    linux -> LD_LIBRARY_PATH
+    or macos ios -> DYLD_LIBRARY_PATH
+    _ -> PATH
+]
+
+system-libpath-env = os-libpath-env env:os
+
+# TODO: maybe it would be better to have the toolchain _just_ be plain data, and have functions that
+# take the toolchain as an argument and do the various things that the functions returned by the
+# toolchain currently do.
+
+## Create a toolchain from the given configuration.
+##
+## Arguments: `(Map :config)`
+## 
+## The `config` may contain the following optional keys:
+## * `paths` - Search paths containing the toolchain, defaults to the current `PATH`.
+## * `library-paths` - Search paths for library files for the toolchain, defaults to the current
+## (os-specific) library path.
+## * `target-triple` - The target triple prefix to use when searching for tools.
+## * `override` - Overridden names or paths of tools.
+## * `compile-flags` - Flags to always pass to the C++ compiler when compiling source code.
+## * `c-compile-flags` - Flags to always pass to the C compiler when compiling C source code.
+## * `link-flags` - Flags to always pass to the compiler when linking compiled code.
+##
+## The returned toolchain is a map with the following keys:
+## * `paths` - The provided `paths` value
+## * `library-paths` - The provided `library-paths` value
+## * `target-triple` - The provided `target-triple` value
+## * `override` - The provided `override` value
+## * `tools` - The indexable collection of tools (e.g. `tools:c++`)
+## * `tool-exec-env` - Environment variables needed to exec tools (derived from `paths` and
+## `library-paths`).
+## * `exec` - A function to exec a tool with the environment set to `tool-exec-env`.
+## * `compile-flags` - The compile flags to use with the C++ compiler
+## * `c-compile-flags` - The compile flags to use with the C compiler
+## * `link-flags` - The link flags to use when linking
+## * `target` - A map containing the following target-specific keys:
+##   * `architecture` - The toolchain target architecture (`arm`, `aarch64`, `i386`, `x86_64`,
+##   `unknown`)
+##   * `os` - The toolchain target operating system (`windows`, `linux`, `ios-simulator`, `ios`,
+##   `macos`, `unknown`)
+##   * `compiler` - The type of the toolchain compiler (`clang`, `gcc`, `msvc`, `unknown`)
+##   * `c++lib` - The type of the toolchain's C++ library (`libstdc++`, `libc++`, `msvc`, `unknown`)
+##   * `c++abi` - The target ABI of the toolchain (`c++11`, `c++03`)
+##   * `lib-path-env` - A function that returns the env to set to add a Path to the library search
+##   path.
+##   * `preload-libraries` - A function that returns the env to set to add a list of library Paths
+##   to the preloaded libraries.
+##   * `static-library-name` - A function that returns the filesystem name for a particular static
+##   library name.
+##   * `dynamic-library-name` - A function that returns the filesystem name for a particular dynamic
+##   library name.
+##   * `exe-name` - A function that returns the filesystem name for a particular executable name.
+toolchain = fn {
+    paths = default (Array:of $Path |> :paths) as (split-paths env:vars:PATH)
+    library-paths = default (Array:of $Path |> :library-paths) as (split-paths env:vars:$system-libpath-env)
+    :target-triple
+    override = default (Map:of $String std:Type:any |> :override) as {}
+
+    compile-flags = default :compile-flags as []
+    c-compile-flags = default :c-compile-flags as []
+    link-flags = default :link-flags as []
+} -> {
+    search = fn (String :tool) -> {
+        prefixed = Iter:map (fn :path -> Path:join $path "$(target-triple)-$tool") $paths
+        plain = Iter:map (fn :path -> Path:join $path $tool) $paths
+
+        # Prefer prefixed tools
+        [:tool] = Iter:flatten [
+            Iter:filter fs:exists <| if $target-triple $prefixed else []
+            Iter:filter fs:exists $plain
+            [$unset]
+        ] | Iter:take 1 | Array:from
+        $tool
+    }
+    
+    ## Access tools in the toolchain by name.
+    ##
+    ## Index: `String :tool`
+    ##
+    ## Tools are found in the following order:
+    ## * If a path is specified in `override:$$tool`, return it.
+    ## * If a string is specified in `override:$$tool`, use it as the search name in the following procedure.
+    ## * Search the provided paths for a tool with the name `"{target-triple}-{tool}"`.
+    ## * Search the provided paths for a tool with the name `$$tool`.
+    ## * Return `Unset` if no tool is found.
+    tools = index (String :tool) -> {
+        result = cache <| match override:$tool [
+            $unset -> search $tool
+            String :name -> search $name
+            Path :p -> $p
+        ]
+        std:once <| if $result {
+            log:info "Found tool `$tool` at `$result`"
+        } else {
+            override = match override:$tool [String :name -> " (overriden as `$name`)", _ -> ""]
+            log:warn "Could not find tool `$tool`$override"
+        }
+        $result
+    }
+
+    tc-env = (Map:from <| Iter:map (fn (MapEntry:@ :k :ps) -> MapEntry:new $k (join-paths $ps)) <|
+        std:merge { PATH = $paths } { :$system-libpath-env = $library-paths }
+    )
+
+    ## `exec` a tool in the toolchain with an appropriate environment.
+    ##
+    ## Arguments: `:tool ^:args`
+    ##
+    ## Returns a `Child` from `std:exec`.
+    exec-tool = fn :name ^:args -> std:exec ~env=$tc-env tools:$name ^args
+
+    {
+        paths
+        library-paths
+        target-triple
+        override
+        tools
+        tool-exec-env = $tc-env
+        exec = $exec-tool
+
+        compile-flags
+        c-compile-flags
+        link-flags
+        target = {
+            # Get the `os`/`architecture`/`compiler`/`c++lib`/`c++abi` keys from detection.
+            ^ergo detection <| fn ^:args -> exec-tool c++ ^compile-flags ^args
+
+            ## Get the environment variables that should be set to add a path to the library lookup path.
+            lib-path-env = fn :path -> { :(os-libpath-env $os) = $path }
+
+            ## Get the environment variables that should be set to preload an array of libraries.
+            ##
+            ## Arguments: `(Array:of $$Path |> :libs)`
+            preload-libraries = match $os [
+                macos -> fn :libs -> { DYLD_INSERT_LIBRARIES = String:join ":" <| Iter:map String:from $libs }
+                ios -> fn :libs -> { DYLD_INSERT_LIBRARIES = String:join ":" <| Iter:map String:from $libs }
+                linux -> fn :libs -> { LD_PRELOAD = String:join ":" <| Iter:map String:from $libs }
+                _ -> fn _ -> {}
+            ]
+
+            ## Get the filename for a static library with the given name.
+            static-library-name = match $os [
+                windows -> fn :name -> "$name.lib"
+                _       -> fn :name -> "lib$name.a"
+            ]
+
+            ## Get the filename for a dynamic library with the given name.
+            dynamic-library-name = match $os [
+                windows -> fn :name -> "$name.dll"
+                linux   -> fn :name -> "lib$name.so"
+                std:bind:or macos ios -> fn :name -> "lib$name.dylib"
+                _       -> fn :name -> $name
+            ]
+
+            ## Get the filename for an executable with the given name.
+            exe-name = match $os [
+                windows -> fn :name -> "$name.exe"
+                _       -> fn :name -> $name
+            ]
+        }
+    }
+}
+
+env-toolchain = {
+    ## Parse space-separated flags from an environment variable, if set.
+    parse-env-flags = fn :var -> {
+        strs = String:split " " (env-or $var "")
+        Array:from <| Iter:filter (fn :v -> match $v ["" -> std:Bool:false, _ -> std:Bool:true]) $strs
+    }
+
+    ## Find binary from environment variable, if set.
+    find-env-bin = fn :var -> std:Unset:map (fn :value -> match (env:path-search $value) [
+        $unset -> Path:from $value
+        Path :p -> $p
+    ]) env:vars:$var
+
+    env-bin = {
+        cc = CC
+        c++ = CXX
+        ar = AR
+    }
+
+    env-flags = {
+        compile-flags = CXXFLAGS
+        c-compile-flags = CFLAGS
+        link-flags = LDFLAGS
+    }
+
+    map-values = fn :f :m -> Map:from <| Iter:map (fn :e -> MapEntry:new e:key <| f e:value) $m
+
+    ##std:doc:value
+    ## A toolchain based on the environment.
+    ## 
+    ## This toolchain is derived from the following environment variables:
+    ## $(String:join "\n" <| Iter:map (fn :e -> "* `$(e:value)`") <| Iter:flatten [$env-bin,$env-flags])
+    ##
+    ## If any of these variables are not set, the default value (per `toolchain`) is used instead.
+    toolchain {
+        override = map-values $find-env-bin $env-bin
+        ^map-values $parse-env-flags $env-flags
+    }
+}
+
+{toolchain, env-toolchain}

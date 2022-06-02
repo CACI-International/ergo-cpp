@@ -1,0 +1,41 @@
+## Detect compiler information.
+##
+## Arguments: `:compiler`
+##
+## `compiler` must be a function that runs the compiler with all arguments and returns a value that
+## is `into $$String` with the compiler output (such as what is returned by `std:exec`).
+##
+## Returns a `Map` with:
+## * `architecture` - the detected target architecture (`arm`, `aarch64`, `i386`, `x86_64`, or
+## `unknown`)
+## * `os` - the detected target operating system (`windows`, `linux`, `ios-simulator`, `ios`,
+## `macos`, or `unknown`)
+## * `compiler` - the detected compiler type (`gcc`, `clang`, `msvc`, or `unknown`)
+## * `c++lib` - the detected c++ library type (`libstdc++`, `libc++`, `msvc`, or `unknown`)
+## * `c++abi` - the detected c++ abi (`c++11` or `c++03`)
+fn :compiler -> {
+    script-dir = std:source:dir ()
+
+    detect = fn :filename -> {
+        result = cache {
+            file = Path:join $script-dir $filename
+            child = $compiler -xc++-header -imacros cassert -E -P $file
+            [^_, :last] = String:split "\n" <| String:trim <| String:from $child
+            String:match "\"{}\"" :result = String:trim $last
+            $result
+        }
+        log:debug "detection file `$filename` yielded `$result`"
+        $result
+    }
+
+    {
+        architecture = detect arch.h
+        os = detect os.h
+        compiler = detect compiler.h
+        c++lib = detect cpplib.h
+        c++abi = match $c++lib [
+            libstdc++ -> detect gnu_abi.h
+            _ => c++11
+        ]
+    }
+}

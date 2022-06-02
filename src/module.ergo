@@ -1,0 +1,302 @@
+std:import {
+    :Array, :Iter, :Map, :MapEntry, :Path, :String,
+    :fs, :match, traits={Into={:into}}
+} = $std
+std:import :Module = ergo Module
+std:import :ModuleLink = ergo ModuleLink
+std:import :ops = ergo operations
+
+glob-src = fn :dir :pattern -> fs:glob <| Path:join $dir $pattern
+
+## Get `files` in the current script directory.
+##
+## Arguments: `()`
+##
+## The return value is suitable to be passed directly as the `files` key in the `module`
+## configuration.
+all-files = fn () (dir = Path:or-source ~parent :dir) -> glob-src $dir *.cpp
+
+## Get `headers` from a heirarchical description.
+##
+## Arguments: `:descr`
+##
+## `decr` may be one of:
+## * `all` to get all headers in the current script directory,
+## * an `Array` of files, or
+## * a `Map` where keys are the `#include` path components and values are
+##   recursively evaluated as `descr`.
+##
+## The return value is suitable to be passed directly as the `headers` key in the `module`
+## configuration.
+header-paths = {
+    inner = std:recurse <| :self -> fn :descr -> {
+        match $descr [
+            all -> Iter:map (fn :a -> MapEntry:new (Path:from <| Path:name $a) $a) <| glob-src {
+                default :dir as std:env:current-dir = std:source:dir $descr
+                $dir
+            } *.h
+            Array :files -> Iter:map (fn (into $Path |> :p) -> MapEntry:new (Path:from <| Path:name $p) $p) $files
+            Map :dirs -> {
+                Iter:flatten <| Iter:map (fn (MapEntry:@ :key :val) -> {
+                    paths = self $val
+                    key = Path:join ^(String:split / $key)
+                    Iter:map (fn (MapEntry:@ :to :from) -> MapEntry:new (Path:join $key $to) $from) $paths
+                }) $dirs
+            }
+        ]
+    }
+    fn :descr -> Map:from <| inner $descr
+}
+
+## Convert a path to an include string.
+path-to-include = fn :p -> String:join "/" <| match (Path:split $p) [
+    # Remove a leading `.`, if any
+    [.,^:rest] -> $rest
+    :rest -> $rest
+]
+
+Modules = Array:of $Module
+Uses = fn :tgt -> match:value [
+    { private = default (Modules :private) as []
+      public = default (Modules :public) as []
+      export = default (Modules :export) as []
+    } -> {
+        $tgt = { private, public, export }
+        ()
+    }
+
+    default (Modules :uses) as [] -> {
+        $tgt = { private = $uses, public = [], export = [] }
+        ()
+    }
+]
+
+## Create a module with the given configuration.
+##
+## Arguments: `(Map :config)`
+## 
+## `config` may have the following optional keys:
+## * `files`: an array of the files to compile.
+## * `headers`: a map with the headers to expose, where the key is the `#include` Path and the value
+## is the header file Path.
+## * `uses`: the modules to use with this module, either an array (with private visibility) or a map
+##   with the following optional keys:
+##   * `public`: an array of modules which will be used when compiling files in this module
+##     and will be visible to consumers of this module.
+##   * `private`: an array of modules which will be used when compiling files in this module.
+##   * `export`: an array of modules which will be visible to consumers of this module.
+## * `compile-flags`: additional compilation flags to use when compiling C++ files in this module
+## * `c-compile-flags`: additional compilation flags to use when compiling C files in this module
+## * `custom`: extra information to add to the module
+##
+## `ergo-cpp:context` is guaranteed to be available when the `config` is evaluated.
+## 
+## In both files and headers, if a file is a relative path, it will be relative to the calling
+## script directory. To set the relative path explicitly, pass the keyed argument `relative-dir`.
+## 
+## The returned value will be a `Module`.
+module = fn (relative-dir = std:Path:or-source ~parent :relative-dir) :config -> Module:new {
+    {
+        files = default (Array :files) as []
+        headers = default (Map :headers) as {}
+        uses = Uses :uses
+        compile-flags = default (Array :compile-flags) as []
+        c-compile-flags = default (Array :c-compile-flags) as []
+        :custom
+    } = $config
+
+    get-public-headers = fn ^:uses -> Iter:unique <| Module:visit ^[
+        fn :f -> std:Bool:not f:hide-include
+        fn :m -> match m:include [Array :i -> $i, _ -> []]
+    ] |> ^uses
+
+    include = {
+        dir = ops:header-dir $relative-dir $headers
+        files = {
+            into $Array |> :public-headers = get-public-headers ^uses:public
+            into $Map |> :private-headers = Module:visit ^[
+                _ -> std:Bool:false
+                fn :m -> (m:include
+                    | Iter:map (fn :i -> i:files)
+                    | Iter:true
+                    | Iter:flatten # Maps flattened to MapEntries
+                    | Iter:map (fn :entry -> MapEntry:new entry:key ())
+                )
+            ] |> ^uses:private
+
+            Array:from <| Iter:no-errors <| Iter:map (fn (MapEntry:@ :to :from) -> {
+                Path :tracked = ops:for-file c++ $from ^compile-flags -I $dir |>:track-cpp {
+                    public-headers
+                    private-headers
+                    file-type = c++-header
+                }
+                MapEntry:new (path-to-include $to) $tracked
+            }) $headers
+        }
+    }
+
+    compiled = {
+        into $Array |> :public-headers = get-public-headers ^uses:public ^uses:private
+        Iter:map (fn :f -> {
+            {:compiler, :flags} = match (String:split . <| Path:name $f):-1 [
+                std:bind:or c C -> { compiler = cc, flags = $c-compile-flags }
+                _ -> { compiler = c++, flags = $compile-flags }
+            ]
+            ops:for-file $compiler $f ^flags |>:compiled { public-headers }
+        }) $files
+    }
+
+    into $Array |> :link = Iter:map (fn :o -> ModuleLink:Object o:object) $compiled
+    into $Array |> :compile-commands = Iter:map (fn :o -> o:compile-command) $compiled
+
+    into $Array |> :uses = Iter:flatten [
+        Iter:map (fn :module -> { module }) <| Iter:flatten [uses:public,uses:export]
+        Iter:map (fn :module -> { module, ~hide-include }) uses:private
+    ]
+
+    { include, link, uses, compile-commands, custom }
+}
+
+## Create a module that is already compiled.
+##
+## Arguments: `(Map :config)`
+##
+## `config` is directly forwarded to `Module:new`, except:
+## * the `uses` Array must only contain Modules (and they will all be considered public/external)
+## 
+## Returns a Module.
+compiled-module = fn :config -> Module:new {
+    { :uses = Modules :uses, ^:rest } = $config
+
+    {
+        uses = Array:from <| Iter:map (fn :module -> { module }) $uses
+        ^rest
+    }
+}
+
+## Flag a string as being an exact name, so that no target-specific rules are applied.
+{:exact-name,:is-exact-name,^_} = {
+    key = "ergo-cpp:exact-name"
+
+    ## Flag a string as being an exact name, so that no target-specific rules are applied.
+    ##
+    ## Arguments: `:name`
+    exact-name = fn :name -> std:meta:set $key () $name
+
+    ## Match an `exact-name` value.
+    is-exact-name = fn :target -> :name -> {
+        if (std:meta:get $key $name) (bind $target $name) else (std:Error:new ~source=$name "not an exact-name")
+        ()
+    }
+}
+
+rename = fn :f :name -> match $name [
+    is-exact-name :name -> $name
+    :name -> context:toolchain:target:$f $name
+]
+
+eval-flags = fn {:compile-flags, :c-compile-flags} :v -> {
+    newctx = std:merge $context { toolchain = { compile-flags, c-compile-flags } }
+    std:dynamic:eval { :$context-key = $newctx } $v
+}
+
+## Create an executable module from a module.
+##
+## Arguments: `(Map :config)`
+##
+## The `config` includes:
+## * `String :name` - the name of the executable
+## * `Module :module` - the module to make into an executable
+## * `optional (Array :compile-flags)` - additional C++ compile flags to use
+## * `optional (Array :c-compile-flags)` - additional C compile flags to use
+## * `optional (Array :link-flags)` - additional link flags to use
+##
+## The Module `output` is the executable file.
+exe = fn (source = std:Path:or-source :source) {
+    name = String :name
+    module = Module :module
+    compile-flags = default (Array :compile-flags) as []
+    c-compile-flags = default (Array :c-compile-flags) as []
+    link-flags = default (Array :link-flags) as []
+} -> Module:new <| eval-flags {compile-flags,c-compile-flags} {
+    into $Array |> :link = Iter:unique <| Module:visit ^[
+        fn :f -> std:Bool:not f:hide-link
+        fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
+    ] |> $module
+    {:file, ^_} = ops:link executable $source (rename exe-name $name) $link ^link-flags
+    {
+        output = $file
+        runtime = [$file]
+        uses = [{module, ~hide-link}]
+    }
+}
+
+## Create a dynamic library module from a module.
+##
+## Arguments: `(Map :config)`
+##
+## The `config` includes:
+## * `String :name` - the name of the library
+## * `Module :module` - the module to make into a library
+## * `optional (Array :compile-flags)` - additional C++ compile flags to use
+## * `optional (Array :c-compile-flags)` - additional C compile flags to use
+## * `optional (Array :link-flags)` - additional link flags to use
+## * `optional (String :abi-version)` - the abi version of the dynamic library
+##   This is used to determine file names and set binary properties. It must be a string of the form
+##   `X[.Y[.Z]]`, where `X`, `Y`, and `Z` are non-negative integers.
+##
+## The Module `output` is the dynamic library file.
+dynamic-library = fn (source = std:Path:or-source :source) {
+    name = String :name
+    module = Module :module
+    compile-flags = default (Array :compile-flags) as []
+    c-compile-flags = default (Array :c-compile-flags) as []
+    link-flags = default (Array :link-flags) as []
+    abi-version = std:optional (String :abi-version)
+} -> Module:new <| eval-flags {compile-flags,c-compile-flags} {
+    into $Array |> :link = Iter:unique <| Module:visit ^[
+        fn :f -> std:Bool:not f:hide-link
+        fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
+    ] |> $module
+    {:file, :links} = ops:link "dynamic library" $source (rename dynamic-library-name $name) $link ^{abi-version} -shared ^link-flags
+    {
+        output = $file
+        link = [ModuleLink:DynamicLib $file] # TODO add runtime?
+        runtime = [$file,^links]
+        uses = [{module, ~hide-link}]
+    }
+}
+
+## Create a static library module from a module.
+##
+## Arguments: `(Map :config)`
+##
+## The `config` includes:
+## * `String :name` - the name of the library
+## * `Module :module` - the module to make into a library
+## * `optional (Array :compile-flags)` - additional C++ compile flags to use
+## * `optional (Array :c-compile-flags)` - additional C compile flags to use
+##
+## The Module `output` is the static library archive file.
+static-library = context-fn :ctx (source = std:Path:or-source :source) {
+    name = String :name
+    module = Module :module
+    compile-flags = default (Array :compile-flags) as []
+    c-compile-flags = default (Array :c-compile-flags) as []
+} -> Module:new <| eval-flags {compile-flags,c-compile-flags} {
+    link = Iter:unique <| Module:visit ^[
+        fn :f -> std:Bool:not f:hide-link
+        fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
+    ] |> $module
+    objs = ModuleLink:types [Object] $link
+    link = ModuleLink:subset [StaticLib,DynamicLib,Flag] $link
+    file = ops:static-link $source (rename static-library-name $name) $objs
+    { 
+        output = $file
+        # XXX We kind of lose the hierarchy here by moving the links out of the `uses`.
+        link = [ModuleLink:StaticLib $file,^link]
+        uses = [{module, ~hide-link}]
+    }
+}
+
+{ all-files, header-paths, module, compiled-module, exe, dynamic-library, static-library, exact-name }

@@ -1,6 +1,17 @@
 # ergo-c++ changelog
 
-## Unreleased
+## Unreleased (0.12)
+* Update to ergo rc.4.
+* Completely refactor the organization of modules and how they are evaluated.
+  * Module creation (`module`, `compiled-module`, `exe`, `dynamic-library`,
+    `static-library`), helpers (`all-files`, `header-paths`, `exact-name`), and
+    toolchains (`toolchain`, `env-toolchain`) all have the same API as before.
+  * `Module` and `ModuleLink` are now directly exposed (no longer under `type`),
+    are specified more thoroughly, and have associated functions in each type
+    index.
+  * `context` is applied with `bind-context` to prevent mistakes.
+  * `Module`s no longer flatten the dependency hierarchy.
+* Break up the one big implementation file for better maintenance.
 
 ## 0.11.16  -- 2022-09-29
 * Fix a bug in header tracking (when `include-dependencies` is `relaxed`).
