@@ -1,18 +1,19 @@
-std:import {fs, match, Iter, Path} = :std
+std:import {:fs, :match, :Iter, :Path} = $std
 
 c++ = ergo ..
 project-root = std:source:dir ()
 build = fn :toolchain :p -> {
     # Load requested output
-    output = ergo <| Path:join :project-root :p
-    c++:get-output {project-root, toolchain} :output
+    output = ergo <| Path:join $project-root $p
+    # Bind context
+    c++:bind-context {project-root, toolchain} $output
 }
-dist = fn :result -> {
-    out = Path:join :project-root dist
-    fs:remove :out
-    fs:create-dir :out
-    fs:copy result:file :out
-    Iter:map (fn :f -> fs:copy :f :out) result:runtime
+dist = fn (c++:Module:@ :module) -> {
+    out = Path:join $project-root dist
+    fs:remove $out
+    fs:create-dir $out
+    fs:copy module:output $out
+    Iter:map (fn :f -> fs:copy $f $out) <| std:Unset:or module:runtime []
     ()
 }
 
@@ -26,11 +27,11 @@ release-toolchain = c++:toolchain {
     link-flags = [-O2, -s]
 }
 
-debug = fn :p -> dist <| build :debug-toolchain :p
-release = fn :p -> dist <| build :release-toolchain :p
-run = fn :p -> c++:exec-output <| build :debug-toolchain :p
+debug = fn :p -> dist <| build $debug-toolchain $p
+release = fn :p -> dist <| build $release-toolchain $p
+run = fn :p -> c++:Module:exec <| build $debug-toolchain $p
 
-write-commands = fn :result -> fs:copy (c++:compile-commands :result) :project-root
+write-commands = fn :module -> fs:copy (c++:Module:compile-commands $module) $project-root
 
 ## Commands include:
 ## * `debug TARGET`
@@ -38,11 +39,11 @@ write-commands = fn :result -> fs:copy (c++:compile-commands :result) :project-r
 ## * `run TARGET`
 ## * `compile-commands (debug|release) TARGET`
 command = match:value [
-    fn debug :p -> debug :p
-    fn release :p -> release :p
-    fn run :p -> run :p
-    fn compile-commands debug :p -> write-commands <| build :debug-toolchain :p
-    fn compile-commands release :p -> write-commands <| build :release-toolchain :p
+    fn debug :p -> debug $p
+    fn release :p -> release $p
+    fn run :p -> run $p
+    fn compile-commands debug :p -> write-commands <| build $debug-toolchain $p
+    fn compile-commands release :p -> write-commands <| build $release-toolchain $p
 ]
 
 ##std:doc:module

@@ -1,4 +1,4 @@
-std:import { :Array, :Iter, :Function, :String, traits={Into={:into}} } = $std
+std:import { :Array, :Iter, :Function, :String, :match, trait={Into={:into}} } = $std
 
 ##std:doc:module
 ## Module linking type.
@@ -74,8 +74,8 @@ std:import { :Array, :Iter, :Function, :String, traits={Into={:into}} } = $std
     ## Returns an Array.
     unwrap = Function:partial $types [Object,StaticLib,DynamicLib,Flag]
 
-    modify $Self {
-        ^index $Self
+    modify $ModuleLink {
+        ^index $ModuleLink
         map, subset, types, unwrap
     }
 }

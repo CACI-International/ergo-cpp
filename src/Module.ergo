@@ -14,7 +14,7 @@ Self = std:Type:new "ergo-cpp:Module"
 ## If omitted, `reduce` defaults to `Iter:flatten` (assuming `T` as `into $$Iter`).
 ##
 ## Returns `T`.
-visit = fn :filter :map ^(optargs (default :reduce as Iter:flatten)) -> std:recurse <| :self -> fn ^:modules -> {
+visit = fn :filter :map ^(std:optargs (std:default :reduce as Iter:flatten)) -> std:recurse <| :self -> fn ^:modules -> {
     reduce <| Iter:flatten <| Iter:map (fn (Self:@ :m) -> {
         reduced-uses = self ^Array:from <| Iter:map (fn :u -> u:module) <| Iter:true <| Iter:map $filter m:uses
         [map $m, $reduced-uses]
@@ -29,7 +29,7 @@ visit = fn :filter :map ^(optargs (default :reduce as Iter:flatten)) -> std:recu
 compile-commands = fn ^:modules -> Path:for ~owned <| fn :path -> {
     file = Path:join $path compile_commands.json
     commands = Array:from <| Iter:unique {
-        visit (_ -> std:Bool:true) (fn (Self:@ :m) -> match m:compile-commands [
+        visit (_ -> std:Bool:true) (fn (Self:@ :m) -> std:match m:compile-commands [
             Array :cc -> $cc
             _ -> []
         ]) |> modules:positional
@@ -50,7 +50,7 @@ compile-commands = fn ^:modules -> Path:for ~owned <| fn :path -> {
 ## The module must provide an executable `output` key in the result (like `exe` does).
 ##
 ## Returns the `Child` result of running `std:exec`.
-exec = fn (Self:@ :module) ~(default :runtime-uses as []) ^:args -> {
+exec = fn (Self:@ :module) ~(std:default :runtime-uses as []) ^:args -> {
     runtime = Iter:unique <| Iter:flatten [
         Unset:or module:runtime []
         Iter:map (fn (Self:@ :m) -> Unset:or m:runtime []) $runtime-uses | Iter:flatten
@@ -59,7 +59,7 @@ exec = fn (Self:@ :module) ~(default :runtime-uses as []) ^:args -> {
         std:fs:create-dir $libpath # Ensure path exists if empty
         Array:from <| Iter:map (fn :f -> std:fs:copy $f $libpath) $runtime
     }
-    rt-env = match std:env:os [
+    rt-env = std:match std:env:os [
         windows -> { PATH = $libpath }
         macos -> { DYLD_LIBRARY_PATH = $libpath }
         linux -> { LD_LIBRARY_PATH = $libpath }

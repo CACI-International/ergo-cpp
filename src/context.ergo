@@ -6,7 +6,7 @@ context-key = "ergo-cpp:context"
 ## This is a dynamic binding evaluating to a `Map` containing:
 ## * `Path :project-root` - The root directory of the project.
 ## * `:toolchain` - The toolchain to use (see `toolchain`)
-## * `Map :options` - Additional options affecting compilation and linking (see `Module:eval`).
+## * `Map :options` - Additional options affecting compilation and linking (see `bind-context`).
 ## * `Map :custom` - User-defined values.
 context = std:dynamic:get $context-key
 
@@ -44,9 +44,9 @@ bind-context = {
     }
 
     fn {
-        ~(Path :project-root)
-        ~(Map :toolchain)
+        ~(std:Path :project-root)
+        ~(std:Map :toolchain)
         ~(Options :options)
         ^:custom
-    } :value -> std:dynamic:bind { :$context-key = { project-root, toolchain, options, custom } } :value
+    } :value -> std:dynamic:bind { :$context-key = { project-root, toolchain, options, custom } } $value
 }
