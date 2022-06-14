@@ -18,7 +18,7 @@ context = std:dynamic:get $context-key
 ## * `Path :project-root` (required) - the project root directory, in which all source files to be
 ##   compiled must exist. This is used so debug info can contain the relative directories of the
 ##   files, and also determines caching keys.
-## * `:toolchain` - the toolchain to use
+## * `:toolchain` (required) - the toolchain to use
 ## * `:options` - a map of options affecting behavior, including:
 ##   * :cache-policy` - may be one of the following:
 ##      * `configuration` (default) - Outputs are cached based on compilation flags.

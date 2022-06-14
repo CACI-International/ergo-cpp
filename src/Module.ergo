@@ -1,24 +1,36 @@
-std:import { :Array, :Iter, :Path, :Unset } = $std
-std:import { :context-key } = ergo context
+std:import { :Array, :Iter, :Path, :Unset, :default } = $std
+std:import { :context, :context-key } = ergo context
 
 Self = std:Type:new "ergo-cpp:Module"
 
 ## Visit modules and their uses.
 ##
-## Arguments: `:filter :map (optional :reduce) -> ^:modules`
+## Arguments: `(Map :config) ^:modules`
 ##
-## `filter` is called on `uses` of each module in `modules` to determine which dependent modules
-## should be visited. `map` is called on each module and should return a type `T`. `reduce` is
-## called on an Iter of `T` and should return `T`.
+## `config` may contain any of the following optional keys:
+## * `filter` - a function that is called on the `uses` of each module in `modules` to determine
+## which dependent modules to visit (defaults to always true).
+## * `map` - a function that is called on each module's inner Map and should return a type `T`
+## (defaults to returning the Map as the single element within an Array).
+## * `reduce` - a function called on an Iter of `T` that should return `T` (defaults to
+## `Iter:flatten`, assuming `T` as `into $$Iter`).
 ##
-## If omitted, `reduce` defaults to `Iter:flatten` (assuming `T` as `into $$Iter`).
+## Notice that if `config` is left as all defaults, the result is all inner Maps of the modules
+## being returned as an Iter.
 ##
 ## Returns `T`.
-visit = fn :filter :map ^(std:optargs (std:default :reduce as Iter:flatten)) -> std:recurse <| :self -> fn ^:modules -> {
-    reduce <| Iter:flatten <| Iter:map (fn (Self:@ :m) -> {
-        reduced-uses = self ^Array:from <| Iter:map (fn :u -> u:module) <| Iter:true <| Iter:map $filter m:uses
-        [map $m, $reduced-uses]
-    }) <| Array:from $modules
+visit = fn {
+    ~(default :filter as (fn _ -> std:Bool:true))
+    map = default :map as (fn :m -> [$m])
+    ~(default :reduce as Iter:flatten)
+} ^:modules -> {
+    do-visit = std:recurse <| :self -> fn ^:modules -> {
+        reduce <| Iter:flatten <| Iter:map (fn (Self:@ :m) -> {
+            reduced-uses = self ^<| Array:from <| Iter:map (fn :u -> u:module) <| Iter:filter $filter m:uses
+            [map $m, $reduced-uses]
+        }) <| Array:from $modules
+    }
+    do-visit ^modules
 }
 
 ## Create a compile_commands.json file for all compile commands in the modules.
@@ -26,18 +38,34 @@ visit = fn :filter :map ^(std:optargs (std:default :reduce as Iter:flatten)) -> 
 ## Arguments: `^(Array:of $$Module |> :modules)`
 ##
 ## Returns a Path to a compile_commands.json file.
-compile-commands = fn ^:modules -> Path:for ~owned <| fn :path -> {
-    file = Path:join $path compile_commands.json
-    commands = Array:from <| Iter:unique {
-        visit (_ -> std:Bool:true) (fn (Self:@ :m) -> std:match m:compile-commands [
-            Array :cc -> $cc
-            _ -> []
-        ]) |> modules:positional
+compile-commands = fn ^:modules -> {
+    path = Path:for ~owned <| fn :path -> {
+        file = Path:join $path compile_commands.json
+        commands = Array:from <| Iter:unique {
+            visit {
+                map = fn :m -> std:match m:compile-commands [
+                    Array :cc -> $cc
+                    _ -> []
+                ]
+            } ^modules
+        }
+        std:fs:create-dir $path
+        std:fs:write (Path:join $path compile_commands.json) <| std:json:stringify ~pretty $commands
     }
-    std:fs:create-dir $path
-    std:fs:write $file <| std:json:stringify ~pretty $commands
-    $file
+    Path:join $path compile_commands.json
 }
+
+## Get the runtime files for the given modules.
+##
+## Arguments: `^(Array:of $$Module |> :modules)`
+##
+## Returns an Iter of the runtime files.
+runtime = fn ^:modules -> Iter:unique <| visit {
+    map = fn :m -> std:match m:runtime [
+        Array :rt -> $rt
+        _ -> []
+    ]
+} ^modules
 
 ## Execute the output of a module.
 ##
@@ -50,11 +78,8 @@ compile-commands = fn ^:modules -> Path:for ~owned <| fn :path -> {
 ## The module must provide an executable `output` key in the result (like `exe` does).
 ##
 ## Returns the `Child` result of running `std:exec`.
-exec = fn (Self:@ :module) ~(std:default :runtime-uses as []) ^:args -> {
-    runtime = Iter:unique <| Iter:flatten [
-        Unset:or module:runtime []
-        Iter:map (fn (Self:@ :m) -> Unset:or m:runtime []) $runtime-uses | Iter:flatten
-    ]
+exec = fn (Self :module) ~(default :runtime-uses as []) ^:args -> {
+    runtime = runtime $module ^runtime-uses
     libpath = std:cache <| Path:for ~owned <| fn :libpath -> {
         std:fs:create-dir $libpath # Ensure path exists if empty
         Array:from <| Iter:map (fn :f -> std:fs:copy $f $libpath) $runtime
@@ -64,7 +89,8 @@ exec = fn (Self:@ :module) ~(std:default :runtime-uses as []) ^:args -> {
         macos -> { DYLD_LIBRARY_PATH = $libpath }
         linux -> { LD_LIBRARY_PATH = $libpath }
     ]
-    std:exec module:output ^(std:merge $args <| fn ~env=$rt-env)
+    Self:@ { :output, ^_ } = $module
+    std:exec $output ^(std:merge $args <| fn ~env=$rt-env)
 }
 
 ##std:doc:module
@@ -119,9 +145,10 @@ std:Type:modify $Self {
     ## Create a new module. See `Module` documentation.
     ##
     ## Arguments: `:content`
-    new = fn :v -> Self:new (std:once $v)
+    new = fn :v -> Self:new <| std:if $context $v else (std:Error:new "Modules must have a context bound")
     @ = Self:@
     visit
     compile-commands
+    runtime
     exec
 }

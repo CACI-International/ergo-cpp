@@ -1,4 +1,7 @@
-std:import { :Array, :Error, :Iter, :Map, :Path, :String, :exec, :fs, :match } = $std
+std:import {
+    :Array, :Error, :Iter, :Map, :Path, :String,
+    :cache, :default, :exec, :fs, :if, :match, :task, trait={Into={:into}}
+} = $std
 std:import { :context } = ergo context
 std:import :ModuleLink = ergo ModuleLink
 
@@ -33,9 +36,10 @@ to-includes = fn :header-dirs -> {
 ##
 ## Returns a Map with operations on the file.
 for-file = fn :compiler :file ^:flags -> {
+    workspace:log:warn "calling for-file on $file with context = $context"
     std:import { :project-root, options={:cache-policy}, :toolchain } = $context
     Path :proj-path = Path:relative $project-root $file
-    tracked-file = fs:track $file
+    tracked-file = workspace:track $file
     tc-flags = toolchain-compile-flags $toolchain $compiler
     compiler = !id toolchain:tools:$compiler
     configuration-id = [$compiler, $tc-flags, $flags]
@@ -54,14 +58,15 @@ for-file = fn :compiler :file ^:flags -> {
     ## `public-headers` should be an array of includes (like `:include` of `Module`).
     ## `private-headers` should be a Map where keys are the header paths.
     track-cpp = fn { public-headers = Array :public-headers, :file-type, :private-headers } -> {
-        {:known-headers,:includes} = Iter:partition (fn :hdr -> if (hdr:files) known-headers else includes) $public-headers
+        { ~(default :known-headers as [])
+          ~(default :includes as []) } = Iter:partition (fn :hdr -> if (hdr:files) known-headers else includes) $public-headers
         public-include-flags = to-includes <| Iter:map (fn :hdr -> hdr:dir) $includes
         known-headers = Map:from <| Iter:flatten <| Iter:map (fn :hdr -> hdr:files) $includes
 
         # Generate and cache the array of dependent files using the toolchain.
         Array :deps = cache ~key=[$key,deps] ~allow-error=top <| task ~count=1 "determining dependencies of $proj-path" {
             file-type-flag = if $file-type "-x$file-type"
-            child = toolchain:exec ~env=toolchain:tool-exec-env $compiler ^[
+            child = std:exec ~env=toolchain:tool-exec-env $compiler ^[
                 ^tc-flags
                 ^flags
                 ^public-include-flags
@@ -70,7 +75,7 @@ for-file = fn :compiler :file ^:flags -> {
                 $file-type-flag
                 $tracked-file
             ]
-            if child:exit-status {
+            if child:exit {
                 into $Array |> :deps = (
                     child:stdout | String:from
                     # Split into lines
@@ -79,13 +84,13 @@ for-file = fn :compiler :file ^:flags -> {
                     | Iter:map (fn :p -> match $p [String:match "{}:" :p -> $p, _ -> $unset]) | Iter:true
                     # Account for filenames with spaces (which have an escape character)
                     # XXX hopefully there aren't other special characters that are escaped...
-                    | Iter:map (fn :name -> $name | String:split "\ " | String:join " ")
+                    | Iter:map (fn :name -> <| $name | String:split "\\ " | String:join " ")
                 )
                 $deps
             } else {
-                log:warn "Couldn't determine dependencies for $proj-path"
+                workspace:log:warn "Couldn't determine dependencies for $proj-path"
                 match $file-type [
-                    c++-header -> log:warn child:stderr
+                    c++-header -> workspace:log:warn child:stderr
                     _ -> Error:new ~source=$file child:stderr
                 ]
                 []
@@ -93,10 +98,11 @@ for-file = fn :compiler :file ^:flags -> {
         }
         # split files based on whether they exist or not
         # TODO set an appropriate cache key based on the cache policy
-        {:exists,:to-check} = cache {
+        { ~(default :exists as [])
+          ~(default :to-check as []) } = cache {
             Iter:partition (fn :dep -> if (fs:exists <| Path:from $dep) exists else to-check) $deps
         }
-        Array :exist-depends = Array:from <| Iter:map fs:track $exists
+        Array :exist-depends = Array:from <| Iter:map workspace:track $exists
         banned-check = if $private-headers (fn :x -> if private-headers:$x { Error:new ~source=$file "private include ($x) used in public header $proj-path" }) else (fn _ -> ())
         String :id = cache {
             into $Array |> :known-depends = Iter:no-errors <| Iter:map (fn :dep -> !id <| match known-headers:$dep [
@@ -111,7 +117,7 @@ for-file = fn :compiler :file ^:flags -> {
     ## Create a compiled file.
     compiled = fn { public-headers = Array :public-headers } -> {
         tracked-file = track-cpp { public-headers }
-        Array:of $Path |> :include-flags = to-includes <| Iter:map (fn :hdr -> hdr:dir) $public-headers
+        include-flags = to-includes <| Iter:map (fn :hdr -> hdr:dir) $public-headers
         obj = Path:join std:env:project-dir c++ $key
 
         # Always enable PIC by default; this works better for not surprising people with code that
@@ -156,9 +162,8 @@ for-file = fn :compiler :file ^:flags -> {
 ## Must have `ergo-cpp:context` available when evaluated.
 header-dir = fn :dir :headers -> {
     std:import { :project-root, options={:cache-policy} } = $context
-    std:import { :MapEntry } = $std
     Path :proj-path = Path:relative $project-root $dir
-    tracked-headers = Map:from <| Iter:map (fn :e -> MapEntry:new e:key (fs:track <| Path:join $dir e:value)) $headers
+    tracked-headers = Map:from <| Iter:map (fn :e -> std:MapEntry:new e:key (workspace:track <| Path:join $dir e:value)) $headers
     String :policy = match $cache-policy [
         configuration -> std:identity $headers
         content -> std:identity $tracked-headers
@@ -170,7 +175,7 @@ header-dir = fn :dir :headers -> {
         dir = Path:owned $dir
         fs:remove $dir
         fs:create-dir $dir
-        Array:from <| Iter:map (fn (MapEntry:@ :to :from) -> fs:copy ~shallow=symbolic $from (Path:join $dir $to)) $tracked-headers
+        Array:from <| Iter:map (fn (std:MapEntry:@ :to :from) -> fs:copy ~shallow=symbolic $from (Path:join $dir $to)) $tracked-headers
         $dir
     }
 }
@@ -234,7 +239,7 @@ link = fn :description (Path :source) (String :name) :link ~:abi-version ^:flags
             ]
             links = {
                 :$name = $compat-version
-                :$compat-version = match $abiname [$compat-version -> $unset, std:Function:pass]
+                std:Type:any :$compat-version = match $abiname [$compat-version -> $unset, std:Function:pass]
             }
         }
         _ -> {
@@ -264,7 +269,7 @@ link = fn :description (Path :source) (String :name) :link ~:abi-version ^:flags
                 ^start-group-flag ^(ModuleLink:unwrap $link) ^end-group-flag
         )
         # Make symlinks
-        Iter:map (fn (std:MapEntry:@ :to :from) -> fs:copy ~shallow=symbolic $from <| Path:join $path $to) $links
+        Iter:map (fn (std:MapEntry:@ :to :from) -> fs:copy ~shallow=symbolic (Path:from $from) <| Path:join $path $to) $links
         $path
     }
 

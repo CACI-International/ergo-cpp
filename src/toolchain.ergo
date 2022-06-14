@@ -102,7 +102,7 @@ toolchain = fn {
     ## * Search the provided paths for a tool with the name `$$tool`.
     ## * Return `Unset` if no tool is found.
     tools = index (String :tool) -> {
-        result = cache <| match override:$tool [
+        std:Type:any :result = cache <| match override:$tool [
             $unset -> search $tool
             String :name -> search $name
             Path :p -> $p
@@ -122,10 +122,10 @@ toolchain = fn {
 
     ## `exec` a tool in the toolchain with an appropriate environment.
     ##
-    ## Arguments: `:tool ^:args`
+    ## Arguments: `(String :name) ^:args`
     ##
     ## Returns a `Child` from `std:exec`.
-    exec-tool = fn :name ^:args -> std:exec ~env=$tc-env tools:$name ^args
+    exec-tool = fn (String :name) ^:args -> std:exec ~env=$tc-env tools:$name ^args
 
     {
         paths
@@ -140,7 +140,7 @@ toolchain = fn {
         c-compile-flags
         link-flags
         target = {
-            { :os, :architecture, :compiler, :c++lib, :c++abi } = ergo detection <| fn ^:args -> exec-tool c++ ^compile-flags ^args
+            { :os, :architecture, :compiler, :c++lib, :c++abi } = ergo detection |> fn ^:args -> exec-tool c++ ^compile-flags ^args
 
             ## Get the environment variables that should be set to add a path to the library lookup path.
             lib-path-env = fn :path -> { :(os-libpath-env $os) = $path }

@@ -93,7 +93,8 @@ Uses = fn :tgt -> match:value [
 ## `ergo-cpp:context` is guaranteed to be available when the `config` is evaluated.
 ## 
 ## In both files and headers, if a file is a relative path, it will be relative to the calling
-## script directory. To set the relative path explicitly, pass the keyed argument `relative-dir`.
+## script directory. The file may also be a string, and it will be converted to a path. To set the
+## relative path explicitly, pass the keyed argument `relative-dir`.
 ## 
 ## The returned value will be a `Module`.
 module = fn (relative-dir = std:Path:or-source ~parent :relative-dir) :config -> Module:new {
@@ -106,24 +107,24 @@ module = fn (relative-dir = std:Path:or-source ~parent :relative-dir) :config ->
         :custom
     } = $config
 
-    get-public-headers = fn ^:uses -> Iter:unique <| Module:visit ^[
-        fn :f -> std:Bool:not f:hide-include
-        fn :m -> match m:include [Array :i -> $i, _ -> []]
-    ] |> ^uses
+    get-public-headers = fn ^:uses -> Iter:unique <| Module:visit {
+        filter = fn :f -> std:Bool:not f:hide-include
+        map = fn :m -> match m:include [Array :i -> $i, _ -> []]
+    } ^uses
 
     include = {
         dir = ops:header-dir $relative-dir $headers
         files = {
             into $Array |> :public-headers = get-public-headers ^uses:public
-            into $Map |> :private-headers = Module:visit ^[
-                _ -> std:Bool:false
-                fn :m -> (m:include
+            into $Map |> :private-headers = Module:visit {
+                filter = _ -> std:Bool:false
+                map = fn :m -> (m:include
                     | Iter:map (fn :i -> i:files)
                     | Iter:true
                     | Iter:flatten # Maps flattened to MapEntries
                     | Iter:map (fn :entry -> MapEntry:new entry:key ())
                 )
-            ] |> ^uses:private
+            } ^uses:private
 
             Array:from <| Iter:no-errors <| Iter:map (fn (MapEntry:@ :to :from) -> {
                 Path :tracked = ops:for-file c++ $from ^compile-flags -I $dir |>:track-cpp {
@@ -134,11 +135,13 @@ module = fn (relative-dir = std:Path:or-source ~parent :relative-dir) :config ->
                 MapEntry:new (path-to-include $to) $tracked
             }) $headers
         }
+        [{dir, files}]
     }
 
     compiled = {
         into $Array |> :public-headers = get-public-headers ^uses:public ^uses:private
         Iter:map (fn :f -> {
+            f = Path:join $relative-dir $f
             {:compiler, :flags} = match (String:split . <| Path:name $f):-1 [
                 std:bind:or c C -> { compiler = cc, flags = $c-compile-flags }
                 _ -> { compiler = c++, flags = $compile-flags }
@@ -197,7 +200,7 @@ rename = fn :f :name -> match $name [
 ]
 
 eval-flags = fn {:compile-flags, :c-compile-flags} :v -> {
-    newctx = std:merge $context { toolchain = { compile-flags, c-compile-flags } }
+    Map :newctx = std:merge $context { toolchain = { compile-flags, c-compile-flags } }
     std:dynamic:eval { :$context-key = $newctx } $v
 }
 
@@ -220,10 +223,10 @@ exe = fn (source = std:Path:or-source :source) {
     c-compile-flags = default (Array :c-compile-flags) as []
     link-flags = default (Array :link-flags) as []
 } -> Module:new <| eval-flags {compile-flags,c-compile-flags} {
-    into $Array |> :link = Iter:unique <| Module:visit ^[
-        fn :f -> std:Bool:not f:hide-link
-        fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
-    ] |> $module
+    into $Array |> :link = Iter:unique <| Module:visit {
+        filter = fn :f -> std:Bool:not f:hide-link
+        map = fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
+    } $module
     {:file, ^_} = ops:link executable $source (rename exe-name $name) $link ^link-flags
     {
         output = $file
@@ -255,10 +258,10 @@ dynamic-library = fn (source = std:Path:or-source :source) {
     link-flags = default (Array :link-flags) as []
     abi-version = std:optional (String :abi-version)
 } -> Module:new <| eval-flags {compile-flags,c-compile-flags} {
-    into $Array |> :link = Iter:unique <| Module:visit ^[
-        fn :f -> std:Bool:not f:hide-link
-        fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
-    ] |> $module
+    into $Array |> :link = Iter:unique <| Module:visit {
+        filter = fn :f -> std:Bool:not f:hide-link
+        map = fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
+    } $module
     {:file, :links} = ops:link "dynamic library" $source (rename dynamic-library-name $name) $link ^{abi-version} -shared ^link-flags
     {
         output = $file
@@ -285,10 +288,10 @@ static-library = fn (source = std:Path:or-source :source) {
     compile-flags = default (Array :compile-flags) as []
     c-compile-flags = default (Array :c-compile-flags) as []
 } -> Module:new <| eval-flags {compile-flags,c-compile-flags} {
-    link = Iter:unique <| Module:visit ^[
-        fn :f -> std:Bool:not f:hide-link
-        fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
-    ] |> $module
+    link = Iter:unique <| Module:visit {
+        filter = fn :f -> std:Bool:not f:hide-link
+        map = fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
+    } $module
     objs = ModuleLink:types [Object] $link
     link = ModuleLink:subset [StaticLib,DynamicLib,Flag] $link
     file = ops:static-link $source (rename static-library-name $name) $objs

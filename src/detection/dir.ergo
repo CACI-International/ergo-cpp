@@ -1,3 +1,5 @@
+std:import { :Path, :String, :cache, :match } = $std
+
 ## Detect compiler information.
 ##
 ## Arguments: `:compiler`
@@ -24,7 +26,7 @@ fn :compiler -> {
             String:match "\"{}\"" :result = String:trim $last
             $result
         }
-        log:debug "detection file `$filename` yielded `$result`"
+        workspace:log:debug "detection file `$filename` yielded `$result`"
         $result
     }
 
@@ -35,7 +37,7 @@ fn :compiler -> {
         c++lib = detect cpplib.h
         c++abi = match $c++lib [
             libstdc++ -> detect gnu_abi.h
-            _ => c++11
+            _ -> c++11
         ]
     }
 }

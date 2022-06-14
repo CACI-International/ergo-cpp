@@ -8,12 +8,13 @@ build = fn :toolchain :p -> {
     # Bind context
     c++:bind-context {project-root, toolchain} $output
 }
-dist = fn (c++:Module:@ :module) -> {
+dist = fn :module -> {
     out = Path:join $project-root dist
+    c++:Module:@ { :output, ^_ } = $module
     fs:remove $out
     fs:create-dir $out
-    fs:copy module:output $out
-    Iter:map (fn :f -> fs:copy $f $out) <| std:Unset:or module:runtime []
+    fs:copy $output $out
+    Iter:map (fn :f -> fs:copy $f $out) <| c++:Module:runtime $module
     ()
 }
 

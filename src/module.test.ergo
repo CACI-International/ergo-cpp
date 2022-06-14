@@ -1,0 +1,113 @@
+std:import { :Path, :String } = $std
+c++ = ergo ..
+
+test = fn :f -> {
+    path = Path:join std:env:process-dir (std:identity $f)
+    std:fs:create-dir $path
+    f $path
+}
+
+{
+    files = {
+    {
+        change = test <| fn :path -> {
+            std:fs:write (Path:join $path foo.cpp) "int foo() { return 0; }"
+            std:fs:write (Path:join $path bar.cpp) "int bar() { return 0; }"
+            make-module = fn :files -> {
+                mod = c++:module ~relative-dir=$path { files }
+                c++:Module:@ :mod = c++:bind-context { project-root = $path } $mod
+                $mod
+            }
+            a = make-module [foo.cpp]
+            String :a = std:identity a:link
+            b = make-module [foo.cpp, bar.cpp]
+            String :b = std:identity b:link
+            std:Bool:not <| std:equal $a $b
+        }
+        }
+        :"content change" = test <| fn :path -> {
+            make-module = fn :val -> {
+                std:fs:write (Path:join $path file.cpp) "int foo() { return $val; }"
+                mod = c++:module ~relative-dir=$path {
+                    files = [file.cpp]
+                }
+                std:log:warn yooo
+                c++:Module:@ (std:Map :mod) = c++:bind-context { project-root = $path, toolchain = c++:toolchain {} } $mod
+                std:log:warn ha
+                std:log:warn $mod
+                $mod
+            }
+            a = make-module 0
+            std:Array _ = a:link
+            String :a = std:identity <| !id a:link
+            b = make-module 1
+            String :b = std:identity <| !id b:link
+            std:Bool:not <| std:equal $a $b
+        }
+    }
+    {
+    headers = {
+        change = test <| fn :path -> {
+            std:fs:write (Path:join $path foo.h) "int foo();"
+            std:fs:write (Path:join $path bar.h) "int bar();"
+            make-module = fn :headers -> {
+                mod = c++:module ~relative-dir=$path {
+                    headers = std:Map:from <| std:Iter:map (fn :f -> {
+                        f = Path:from $f
+                        std:MapEntry:new $f $f
+                    }) $headers
+                }
+                c++:Module:@ :mod = c++:bind-context { project-root = $path } $mod
+                $mod
+            }
+            a = make-module [foo.h]
+            String :a = std:identity a:include
+            b = make-module [foo.h, bar.h]
+            String :b = std:identity b:include
+            std:Bool:not <| std:equal $a $b
+        }
+        :"content change" = test <| fn :path -> {
+            make-module = fn :val -> {
+                std:fs:write (Path:join $path foo.h) '
+                    ' #define V $val
+                    ' int foo();
+                mod = c++:module ~relative-dir=$path {
+                    headers = {
+                        :(Path:from foo.h) = Path:from foo.h
+                    }
+                }
+                c++:Module:@ :mod = c++:bind-context { project-root = $path } $mod
+                $mod
+            }
+            a = make-module 0
+            String :a = std:identity a:include
+            b = make-module 1
+            String :b = std:identity b:include
+            std:Bool:not <| std:equal $a $b
+        }
+        :"content change cpp dependency" = test <| fn :path -> {
+            std:fs:write (Path:join $path foo.cpp) '
+                ' #include "foo.h"
+                ' int foo() { return V; }
+            make-module = fn :val -> {
+                std:fs:write (Path:join $path foo.h) '
+                    ' #define V $val
+                    ' int foo();
+                mod = c++:module ~relative-dir=$path {
+                    files = [foo.cpp]
+                    headers = {
+                        :(Path:from foo.h) = Path:from foo.h
+                    }
+                }
+                c++:Module:@ :mod = c++:bind-context { project-root = $path } $mod
+                $mod
+            }
+            a = make-module 0
+            String :a = std:identity a:link
+            b = make-module 1
+            String :b = std:identity b:link
+            std:Bool:not <| std:equal $a $b
+        }
+    }
+    }
+}
