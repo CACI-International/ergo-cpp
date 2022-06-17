@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.11.13  -- 2022-05-17
+* Fix an incompatibility with newer libstdc++ headers in compiler detection.
+
 ## 0.11.12  -- 2022-05-04
 * Fix a bug introduced in 0.11.11 which caused modules to recompile files if
   they depended upon a module which had to recompile a file.
