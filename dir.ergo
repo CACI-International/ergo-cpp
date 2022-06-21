@@ -135,7 +135,8 @@ toolchain = fn {
             file = Path:join :script-dir detection :filename
             exec-result = exec-tool c++ ^:compile-flags -xc++-header -imacros cassert -E -P :file
             exec-result:complete
-            String:format "{}\n{}\"{}\"" _ _ :result = String:trim <| String:from exec-result:stdout
+            [^_, :last] = String:split "\n" <| String:trim <| String:from exec-result:stdout
+            String:format "\"{}\"" :result = String:trim :last
             :result
         }
         log:debug "detection file `^filename` yielded `^result`"
