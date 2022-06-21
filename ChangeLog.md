@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-## 0.11.13  -- 2022-05-17
+## 0.11.14  -- 2022-06-21
+* Ensure detection works with both newer libstdc++ headers and older ones.
+  * The fix from 0.11.13 doesn't seem to work with older versions for some
+    reason.
+
+## 0.11.13  -- 2022-06-17
 * Fix an incompatibility with newer libstdc++ headers in compiler detection.
 
 ## 0.11.12  -- 2022-05-04
