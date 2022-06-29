@@ -14,9 +14,9 @@
 ## modules can depend on other modules. To be able to use a module, you must bind it with a context
 ## (using `bind-context`) which determines the configuration of the module.
 {
-    Module = ergo src/Module
-    ModuleLink = ergo src/ModuleLink
-    std:import { :context, :bind-context } = ergo src/context
+    std:import :Module = ergo src/Module
+    std:import :ModuleLink = ergo src/ModuleLink
+    std:import { :context, :bind-context, :modify-context } = ergo src/context
     ^ergo src/module
     ^ergo src/toolchain
 }

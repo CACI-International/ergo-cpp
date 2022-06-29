@@ -1,17 +1,14 @@
 log = std:log:sublog c++
 
 # Alias `std:fs:track` to change `force-check` in tests.
-track = fn :file -> {
-    log:warn "calling track on $file"
-    std:fs:track (std:Type:any :force-check = std:dynamic:get test) $file
-}
+track = fn :file -> std:fs:track (std:Type:any :force-check = std:dynamic:get test) $file
 
 ## Commands
 ##
 ## * `test` - run the test suite
 command = std:match:value [
     fn test -> {
-        std:dynamic:eval { test = () } <| std:test:run {
+        (!no-id std:dynamic:eval) { test = () } <| std:test:run {
             module = std:ergo-lazy module.test
         }
     }

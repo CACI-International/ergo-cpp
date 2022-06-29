@@ -1,5 +1,5 @@
 std:import { :Array, :Iter, :Path, :Unset, :default } = $std
-std:import { :context, :context-key } = ergo context
+std:import { :context } = ergo context
 
 Self = std:Type:new "ergo-cpp:Module"
 

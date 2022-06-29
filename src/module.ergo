@@ -5,7 +5,7 @@ std:import {
 std:import :Module = ergo Module
 std:import :ModuleLink = ergo ModuleLink
 std:import :ops = ergo operations
-std:import { :context, :context-key } = ergo context
+std:import { :context, :modify-context } = ergo context
 
 glob-src = fn :dir :pattern -> fs:glob <| Path:join $dir $pattern
 
@@ -56,7 +56,12 @@ path-to-include = fn :p -> String:join "/" <| match (Path:split $p) [
     :rest -> $rest
 ]
 
-Modules = Array:of $Module
+ShareContext = fn :T -> fn :tgt -> T :result -> {
+    $tgt = (!no-id $modify-context) (fn :c -> $c) $result
+    ()
+}
+
+Modules = Array:of <| ShareContext $Module
 Uses = fn :tgt -> match:value [
     { private = default (Modules :private) as []
       public = default (Modules :public) as []
@@ -200,8 +205,7 @@ rename = fn :f :name -> match $name [
 ]
 
 eval-flags = fn {:compile-flags, :c-compile-flags} :v -> {
-    Map :newctx = std:merge $context { toolchain = { compile-flags, c-compile-flags } }
-    std:dynamic:eval { :$context-key = $newctx } $v
+    modify-context (fn :m -> std:merge $m { toolchain = { compile-flags, c-compile-flags } }) $v
 }
 
 ## Create an executable module from a module.

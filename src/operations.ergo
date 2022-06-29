@@ -36,7 +36,6 @@ to-includes = fn :header-dirs -> {
 ##
 ## Returns a Map with operations on the file.
 for-file = fn :compiler :file ^:flags -> {
-    workspace:log:warn "calling for-file on $file with context = $context"
     std:import { :project-root, options={:cache-policy}, :toolchain } = $context
     Path :proj-path = Path:relative $project-root $file
     tracked-file = workspace:track $file

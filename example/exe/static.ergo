@@ -1,4 +1,4 @@
-c++ = workspace:c++
+std:import {:c++} = $workspace
 
 module = c++:module {
     files = c++:all-files ()

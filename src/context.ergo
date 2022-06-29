@@ -1,14 +1,12 @@
-context-key = "ergo-cpp:context"
-
 ##std:doc:value
 ## The ergo-cpp context.
 ##
-## This is a dynamic binding evaluating to a `Map` containing:
+## This is a late binding evaluating to a `Map` containing:
 ## * `Path :project-root` - The root directory of the project.
 ## * `:toolchain` - The toolchain to use (see `toolchain`)
 ## * `Map :options` - Additional options affecting compilation and linking (see `bind-context`).
 ## * `Map :custom` - User-defined values.
-context = std:dynamic:get $context-key
+context = $?ergo-cpp-context
 
 ## Bind the context into a value (such as a Module).
 ##
@@ -34,7 +32,7 @@ context = std:dynamic:get $context-key
 ## context will be used to evaluate `value`. Any additional unrecognized keys will be present as a
 ## map under the `custom` key in the context.
 ##
-## Returns `value` with the context bound.
+## Returns `value` evaluated and with the context bound.
 bind-context = {
     Options = fn :target -> std:default {
         ~(std:default :cache-policy as configuration)
@@ -48,5 +46,22 @@ bind-context = {
         ~(std:Map :toolchain)
         ~(Options :options)
         ^:custom
-    } :value -> std:dynamic:bind { :$context-key = { project-root, toolchain, options, custom } } $value
+    } (std:Type:any :value) -> {
+        # We evaluate `value` specifically for Modules, so that all uses are loaded when the late
+        # binding occurs. Ergo might be able to help us out with this in the future.
+        std:Map :c = { project-root, toolchain, options, custom }
+        late-bind { ergo-cpp-context = $c } $value
+    }
+}
+
+## Modify the current context for a value.
+##
+## Arguments: `(Function :f) :value`
+##
+## `f` will be called on the current context, and must return the new context map to use.
+##
+## Returns the result of binding the new context in `value`.
+modify-context = fn :f :v -> {
+    std:Map :c = f $context
+    late-bind { ergo-cpp-context = $c } $v
 }
