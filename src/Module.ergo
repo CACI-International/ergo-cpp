@@ -104,9 +104,8 @@ exec = fn (Self :module) ~(default :runtime-uses as []) ^:args -> {
 ## Modules also include the Modules that they depend upon. This approach is more convenient than
 ## each Module flattening dependent Module information, as retaining the dependency tree is valuable
 ## to various other operations. Retaining the dependency tree also allows custom associated data to
-## be aggregated in application-specific ways, without having to e.g. define associated sum
-## functions. Retaining the dependency tree also allows custom associated data to be aggregated in
-## application-specific ways, without having to e.g. define associated semigroup join functions.
+## be aggregated in application-specific ways, without having to e.g. define associated semigroup
+## join functions.
 ##
 ## The type holds a single value that should evaluate to a Map with the following optional keys:
 ## * `Array :include` - header directories that need to be exposed to expose the module's features.
