@@ -7,14 +7,29 @@ test = fn :f -> {
     f $path
 }
 
+bind-context = fn :project-root :mod -> c++:bind-context { project-root, toolchain = c++:toolchain {} } $mod
+
 {
     files = {
+        :"no change" = test <| fn :path -> {
+            std:fs:write (Path:join $path foo.cpp) "int foo() { return 0; }"
+            make-module = fn :files -> {
+                mod = c++:module ~relative-dir=$path { files }
+                c++:Module:@ :mod = bind-context $path $mod
+                $mod
+            }
+            a = make-module [foo.cpp]
+            String :a = std:identity <| !id a:link
+            b = make-module [foo.cpp]
+            String :b = std:identity <| !id b:link
+            std:equal $a $b
+        }
         change = test <| fn :path -> {
             std:fs:write (Path:join $path foo.cpp) "int foo() { return 0; }"
             std:fs:write (Path:join $path bar.cpp) "int bar() { return 0; }"
             make-module = fn :files -> {
                 mod = c++:module ~relative-dir=$path { files }
-                c++:Module:@ :mod = c++:bind-context { project-root = $path, toolchain = c++:toolchain {} } $mod
+                c++:Module:@ :mod = bind-context $path $mod
                 $mod
             }
             a = make-module [foo.cpp]
@@ -23,20 +38,31 @@ test = fn :f -> {
             String :b = std:identity <| !id b:link
             std:Bool:not <| std:equal $a $b
         }
-        :"content change" = test <| fn :path -> {
-            make-module = fn :val -> {
+        content = {
+            make-module = fn :path :val -> {
                 std:fs:write (Path:join $path file.cpp) "int foo() { return $val; }"
                 mod = c++:module ~relative-dir=$path {
                     files = [file.cpp]
                 }
-                c++:Module:@ (std:Map :mod) = c++:bind-context { project-root = $path, toolchain = c++:toolchain {} } $mod
+                c++:Module:@ :mod = bind-context $path $mod
                 $mod
             }
-            a = make-module 0
-            String :a = std:identity <| !id a:link
-            b = make-module 1
-            String :b = std:identity <| !id b:link
-            std:Bool:not <| std:equal $a $b
+            {
+                :"no change" = test <| fn :path -> {
+                    a = make-module $path 0
+                    String :a = std:identity <| !id a:link
+                    b = make-module $path 0
+                    String :b = std:identity <| !id b:link
+                    std:equal $a $b
+                }
+                change = test <| fn :path -> {
+                    a = make-module $path 0
+                    String :a = std:identity <| !id a:link
+                    b = make-module $path 1
+                    String :b = std:identity <| !id b:link
+                    std:Bool:not <| std:equal $a $b
+                }
+            }
         }
     }
     headers = {
@@ -50,7 +76,7 @@ test = fn :f -> {
                         std:MapEntry:new $f $f
                     }) $headers
                 }
-                c++:Module:@ :mod = c++:bind-context { project-root = $path } $mod
+                c++:Module:@ :mod = bind-context $path $mod
                 $mod
             }
             a = make-module [foo.h]
@@ -69,7 +95,7 @@ test = fn :f -> {
                         :(Path:from foo.h) = Path:from foo.h
                     }
                 }
-                c++:Module:@ :mod = c++:bind-context { project-root = $path } $mod
+                c++:Module:@ :mod = bind-context $path $mod
                 $mod
             }
             a = make-module 0
@@ -92,7 +118,7 @@ test = fn :f -> {
                         :(Path:from foo.h) = Path:from foo.h
                     }
                 }
-                c++:Module:@ :mod = c++:bind-context { project-root = $path } $mod
+                c++:Module:@ :mod = bind-context $path $mod
                 $mod
             }
             a = make-module 0
