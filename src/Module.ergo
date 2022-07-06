@@ -124,7 +124,7 @@ exec = fn (Self :module) ~(default :runtime-uses as []) ^:args -> {
 ##   module uses) won't be exposed.
 ##   * `:hide-link` - if set, indicates the module's `link`s (and those of any modules the module
 ##   uses) won't be exposed.
-##   The Map may contain other custom associative information.
+##   * The Map may contain other custom associative information.
 ## * `Array :runtime` - files needed by the module's `link` components at runtime but that don't
 ## need to be linked. Note that files that may not be directly needed by the `link` components (like
 ## abi version symlinks) are appropriate here too.
