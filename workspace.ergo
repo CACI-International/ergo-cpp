@@ -9,7 +9,7 @@ track = fn :file -> std:fs:track (std:Type:any :force-check = std:dynamic:get te
 command = std:match:value [
     fn test -> {
         (!no-id std:dynamic:eval) { test = () } <| std:test:run {
-            module = std:ergo-lazy module.test
+            module = std:ergo-lazy src/module.test
         }
     }
 ]
