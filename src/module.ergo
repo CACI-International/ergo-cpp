@@ -21,7 +21,7 @@ all-files = fn () (dir = Path:or-source ~parent :dir) -> glob-src $dir *.cpp
 ##
 ## Arguments: `:descr`
 ##
-## `decr` may be one of:
+## `descr` may be one of:
 ## * `all` to get all headers in the current script directory,
 ## * an `Array` of files, or
 ## * a `Map` where keys are the `#include` path components and values are
