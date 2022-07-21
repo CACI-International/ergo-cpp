@@ -8,8 +8,11 @@ Self = std:Type:new "ergo-cpp:Module"
 ## Arguments: `(Map :config) ^:modules`
 ##
 ## `config` may contain any of the following optional keys:
-## * `filter` - a function that is called on the `uses` of each module in `modules` to determine
-## which dependent modules to visit (defaults to always true).
+## * `filter` - a function that is called with two arguments to determine which dependent
+## modules to visit:
+##   * `module` - the module map
+##   * `use` - each `uses` of the module
+## (defaults to always true).
 ## * `map` - a function that is called on each module's inner Map and should return a type `T`
 ## (defaults to returning the Map as the single element within an Array).
 ## * `reduce` - a function called on an Iter of `T` that should return `T` (defaults to
@@ -20,13 +23,13 @@ Self = std:Type:new "ergo-cpp:Module"
 ##
 ## Returns `T`.
 visit = fn {
-    ~(default :filter as (fn _ -> std:Bool:true))
+    ~(default :filter as (_ -> std:Bool:true))
     map = default :map as (fn :m -> [$m])
     ~(default :reduce as Iter:flatten)
 } ^:modules -> {
     do-visit = std:recurse <| :self -> fn ^:modules -> {
         reduce <| Iter:flatten <| Iter:map (fn (Self:@ :m) -> {
-            reduced-uses = self ^<| Array:from <| Iter:map (fn :u -> u:module) <| Iter:filter $filter m:uses
+            reduced-uses = self ^<| Array:from <| Iter:map (fn :u -> u:module) <| Iter:filter (fn :u -> filter $m $u) m:uses
             [map $m, $reduced-uses]
         }) <| Array:from $modules
     }
@@ -39,7 +42,7 @@ visit = fn {
 ##
 ## Returns a Path to a compile_commands.json file.
 compile-commands = fn ^:modules -> {
-    path = Path:for ~owned <| fn :path -> {
+    path = Path:for <| fn :path -> {
         file = Path:join $path compile_commands.json
         commands = Array:from <| Iter:unique {
             visit {
@@ -52,7 +55,7 @@ compile-commands = fn ^:modules -> {
         std:fs:create-dir $path
         std:fs:write (Path:join $path compile_commands.json) <| std:json:stringify ~pretty $commands
     }
-    Path:join $path compile_commands.json
+    Path:owned <| Path:join $path compile_commands.json
 }
 
 ## Get the runtime files for the given modules.
