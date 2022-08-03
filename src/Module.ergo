@@ -29,7 +29,10 @@ visit = fn {
 } ^:modules -> {
     do-visit = std:recurse <| :self -> fn ^:modules -> {
         reduce <| Iter:flatten <| Iter:map (fn (Self:@ :m) -> {
-            reduced-uses = self ^<| Array:from <| Iter:map (fn :u -> u:module) <| Iter:filter (fn :u -> filter $m $u) m:uses
+            reduced-uses = (self ^<| Array:from
+                <| Iter:map (fn :u -> u:module)
+                <| Iter:filter (fn :u -> filter $m $u)
+                <| std:Unset:or m:uses [])
             [map $m, $reduced-uses]
         }) <| Array:from $modules
     }

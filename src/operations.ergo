@@ -256,7 +256,7 @@ link = fn :description (Path :source) (String :name) :link ~:abi-version ^:flags
         configuration -> std:identity $configuration-id
         content -> std:identity [$configuration-id, $link]
     ]
-    String :key = "$proj-path/$abiname.$policy"
+    Path :key = Path:join $proj-path "$abiname.$policy"
 
     path = Path:join std:env:project-dir c++ $key
 
@@ -297,7 +297,7 @@ static-link = fn (Path :source) (String :name) :link -> {
         configuration -> std:identity $configuration-id
         content -> std:identity [$configuration-id, $link]
     ]
-    String :key = "$proj-path/$name.$policy"
+    Path :key = Path:join $proj-path "$name.$policy"
 
     path = Path:join std:env:project-dir c++ $key
 
