@@ -2,7 +2,7 @@ std:import {:c++} = $workspace
 
 module = c++:module {
     files = c++:all-files ()
-    uses = [ergo ../basic_module]
+    uses = [load ../basic_module]
 }
 
 c++:exe {name = forty_two, module}

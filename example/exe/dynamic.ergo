@@ -2,7 +2,7 @@ c++ = workspace:c++
 
 module = c++:module {
     files = c++:all-files ()
-    uses = [c++:dynamic-library {name=add2, module = ergo ../basic_module, abi-version=1}]
+    uses = [c++:dynamic-library {name=add2, module = load ../basic_module, abi-version=1}]
 }
 
 c++:exe {name = forty_two_dyn, module}

@@ -1,5 +1,5 @@
 std:import { :Path, :String } = $std
-std:import :c++ = ergo ..
+std:import :c++ = load ..
 
 test = fn :f -> {
     Path :path = Path:join std:env:process-dir (std:identity $f)

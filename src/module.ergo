@@ -2,10 +2,10 @@ std:import {
     :Array, :Iter, :Map, :MapEntry, :Path, :String,
     :default, :fs, :if, :match, trait={Into={:into}}
 } = $std
-std:import :Module = ergo Module
-std:import :ModuleLink = ergo ModuleLink
-std:import :ops = ergo operations
-std:import { :context, :modify-context } = ergo context
+std:import :Module = load Module
+std:import :ModuleLink = load ModuleLink
+std:import :ops = load operations
+std:import { :context, :modify-context } = load context
 
 glob-src = fn :dir :pattern -> fs:glob <| Path:join $dir $pattern
 
@@ -50,14 +50,14 @@ header-paths = {
 }
 
 ## Convert a path to an include string.
-path-to-include = fn :p -> String:join "/" <| match (Path:split $p) [
+path-to-include = fn ((into $Path) :p) -> String:join "/" <| match (Path:split $p) [
     # Remove a leading `.`, if any
     [.,^:rest] -> $rest
     :rest -> $rest
 ]
 
 ShareContext = fn :T -> fn :tgt -> T :result -> {
-    $tgt = (!no-id $modify-context) (fn :c -> $c) $result
+    T $tgt = modify-context (fn :c -> $c) $result
     ()
 }
 
@@ -97,18 +97,18 @@ Uses = fn :tgt -> match:value [
 ##
 ## `ergo-cpp:context` is guaranteed to be available when the `config` is evaluated.
 ## 
-## In both files and headers, if a file is a relative path, it will be relative to the calling
+## In both `files` and `headers`, if a file is a relative path, it will be relative to the calling
 ## script directory. The file may also be a string, and it will be converted to a path. To set the
 ## relative path explicitly, pass the keyed argument `relative-dir`.
 ## 
 ## The returned value will be a `Module`.
-module = fn (relative-dir = std:Path:or-source ~parent :relative-dir) :config -> Module:new {
+module = fn ~(std:Path:or-source ~parent :relative-dir) :config -> Module:new {
     {
-        files = default (Array :files) as []
-        headers = default (Map :headers) as {}
-        uses = Uses :uses
-        compile-flags = default (Array :compile-flags) as []
-        c-compile-flags = default (Array :c-compile-flags) as []
+        ~(default (Array :files) as [])
+        ~(default (Map :headers) as {})
+        ~(Uses :uses)
+        ~(default (Array :compile-flags) as [])
+        ~(default (Array :c-compile-flags) as [])
         :custom
     } = $config
 
@@ -123,7 +123,7 @@ module = fn (relative-dir = std:Path:or-source ~parent :relative-dir) :config ->
             into $Array |> :public-headers = get-public-headers ^uses:public
             into $Map |> :private-headers = Module:visit {
                 filter = _ -> std:Bool:false
-                map = fn :m -> (m:include
+                map = fn :m -> (std:Unset:or m:include []
                     | Iter:map (fn :i -> i:files)
                     | Iter:true
                     | Iter:flatten # Maps flattened to MapEntries
@@ -132,7 +132,7 @@ module = fn (relative-dir = std:Path:or-source ~parent :relative-dir) :config ->
             } ^uses:private
 
             Array:from <| Iter:no-errors <| Iter:map (fn (MapEntry:@ :to :from) -> {
-                Path :tracked = ops:for-file c++ $from ^compile-flags -I $dir |>:track-cpp {
+                Path :tracked = ops:for-file c++ (Path:join $relative-dir $from) ^compile-flags -I $dir |>:track-cpp {
                     public-headers
                     private-headers
                     file-type = c++-header

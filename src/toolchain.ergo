@@ -140,7 +140,7 @@ toolchain = fn {
         c-compile-flags
         link-flags
         target = {
-            { :os, :architecture, :compiler, :c++lib, :c++abi } = ergo detection |><| fn ^:args -> exec-tool c++ ^compile-flags ^args
+            { :os, :architecture, :compiler, :c++lib, :c++abi } = load detection |><| fn ^:args -> exec-tool c++ ^compile-flags ^args
 
             ## Get the environment variables that should be set to add a path to the library lookup path.
             lib-path-env = fn :path -> { :(os-libpath-env $os) = $path }

@@ -8,8 +8,8 @@ track = fn :file -> std:fs:track (std:Type:any :force-check = std:dynamic:get te
 ## * `test` - run the test suite
 command = std:match:value [
     fn test -> {
-        (!no-id std:dynamic:eval) { test = () } <| std:test:run {
-            module = std:ergo-lazy src/module.test
+        (!id ~set=std:Bool:false std:dynamic:eval) { test = () } <| std:test:run {
+            module = std:load-lazy src/module.test
         }
     }
 ]

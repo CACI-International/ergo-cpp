@@ -46,7 +46,7 @@ bind-context = {
         ~(std:Map :toolchain)
         ~(Options :options)
         ^:custom
-    } (std:Type:any :value) -> {
+    } (std:Type:any :value) -> !id {
         # We evaluate `value` specifically for Modules, so that all uses are loaded when the late
         # binding occurs. Ergo might be able to help us out with this in the future.
         std:Map :c = { project-root, toolchain, options, custom }

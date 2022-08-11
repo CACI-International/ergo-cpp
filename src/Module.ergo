@@ -1,5 +1,5 @@
 std:import { :Array, :Iter, :Path, :Unset, :default } = $std
-std:import { :context } = ergo context
+std:import { :context } = load context
 
 Self = std:Type:new "ergo-cpp:Module"
 
@@ -150,7 +150,7 @@ std:Type:modify $Self {
     ## Create a new module. See `Module` documentation.
     ##
     ## Arguments: `:content`
-    new = fn :v -> Self:new <| std:if $context $v else (std:Error:new "Modules must have a context bound")
+    new = fn :v -> Self:new <| !id <| std:if $context $v else (std:Error:new "Modules must have a context bound")
     @ = Self:@
     visit
     compile-commands

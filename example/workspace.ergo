@@ -1,10 +1,10 @@
 std:import {:fs, :match, :Iter, :Path} = $std
 
-c++ = ergo ..
+c++ = load ..
 project-root = std:source:dir ()
 build = fn :toolchain :p -> {
     # Load requested output
-    output = ergo <| Path:join $project-root $p
+    output = std:load-lazy <| Path:join $project-root $p
     # Bind context
     c++:bind-context {project-root, toolchain} $output
 }

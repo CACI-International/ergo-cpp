@@ -6,7 +6,7 @@ c++:module {
         addition = all
     }
     uses = {
-        export = [ergo add3]
-        private = [ergo add1]
+        export = [load add3]
+        private = [load add1]
     }
 }

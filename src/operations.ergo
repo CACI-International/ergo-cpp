@@ -2,8 +2,8 @@ std:import {
     :Array, :Error, :Iter, :Map, :Path, :String,
     :cache, :default, :exec, :fs, :if, :match, :task, trait={Into={:into}}
 } = $std
-std:import { :context } = ergo context
-std:import :ModuleLink = ergo ModuleLink
+std:import { :context } = load context
+std:import :ModuleLink = load ModuleLink
 
 # TODO flags passed to `compile` should account for identities correctly (wrt untracked-flags)
 
@@ -35,7 +35,7 @@ to-includes = fn :header-dirs -> {
 ## If `cache-policy` is `content`, the returned path based on the configuration and file content.
 ##
 ## Returns a Map with operations on the file.
-for-file = fn :compiler :file ^:flags -> {
+for-file = fn :compiler (Path :file) ^:flags -> {
     std:import { :project-root, options={:cache-policy}, :toolchain } = $context
     Path :proj-path = Path:relative $project-root $file
     tracked-file = workspace:track $file
@@ -159,7 +159,7 @@ for-file = fn :compiler :file ^:flags -> {
 ## Arguments: `:dir :headers`
 ##
 ## Must have `ergo-cpp:context` available when evaluated.
-header-dir = fn :dir :headers -> {
+header-dir = fn (Path :dir) :headers -> {
     std:import { :project-root, options={:cache-policy} } = $context
     Path :proj-path = Path:relative $project-root $dir
     tracked-headers = Map:from <| Iter:map (fn :e -> std:MapEntry:new e:key (workspace:track <| Path:join $dir e:value)) $headers
@@ -187,15 +187,13 @@ header-dir = fn :dir :headers -> {
 ## * `abi-version` - the abi version to set, if any. If set, appropritae abi version links will be
 ## created.
 ##
-## `link` should be an Array of ModuleLink entries.
-##
 ## Must have `ergo-cpp:context` available when evaluated.
 ##
 ## Returns a map with:
 ## * `file` - the linked file
 ## * `links` - an Array of symlinks implementing the file ABI interface. This will be empty if and
 ## only if `abi-version` is unset.
-link = fn :description (Path :source) (String :name) :link ~:abi-version ^:flags -> {
+link = fn :description (Path :source) (String :name) (Array:of $ModuleLink |> :link) ~:abi-version ^:flags -> {
     std:import { :project-root, :toolchain, options={:cache-policy} } = $context
     os = toolchain:target:os
     start-group-flag = match $os [
@@ -287,7 +285,7 @@ link = fn :description (Path :source) (String :name) :link ~:abi-version ^:flags
 ## Must have `ergo-cpp:context` available when evaluated.
 ##
 ## Returns the archive.
-static-link = fn (Path :source) (String :name) :link -> {
+static-link = fn (Path :source) (String :name) (Array:of $Path |> :link) -> {
     std:import { :project-root, :toolchain, options={:cache-policy} } = $context
 
     Path :proj-path = Path:relative $project-root $source
