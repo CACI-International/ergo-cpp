@@ -65,7 +65,7 @@ for-file = fn :compiler (Path :file) ^:flags -> {
         # Generate and cache the array of dependent files using the toolchain.
         Array :deps = cache ~key=[$key,deps] ~allow-error=top <| task ~count=1 "determining dependencies of $proj-path" {
             file-type-flag = if $file-type "-x$file-type"
-            child = std:exec ~env=toolchain:tool-exec-env $compiler ^[
+            child = exec ~env=toolchain:tool-exec-env $compiler ^[
                 ^tc-flags
                 ^flags
                 ^public-include-flags
@@ -135,7 +135,7 @@ for-file = fn :compiler (Path :file) ^:flags -> {
         object = cache ~key=$key {
             obj = Path:owned $obj
             fs:create-dir <| Path:parent $obj
-            task ~count=1 "compiling $proj-path" (exec ~env=toolchain:tool-exec-env ^args):success
+            task ~count=1 "compiling $proj-path" { exec ~env=toolchain:tool-exec-env ^args; () }
             $obj
         }
 
@@ -261,10 +261,11 @@ link = fn :description (Path :source) (String :name) (Array:of $ModuleLink |> :l
     path = cache ~key=$key {
         path = Path:owned $path
         fs:create-dir $path
-        task ~count=1 "linking $description $name" (
-            toolchain:exec c++ ^tc-flags ^flags ^abi-flags -o (Path:join $path $abiname)
-                ^start-group-flag ^(ModuleLink:unwrap $link) ^end-group-flag
-        )
+        task ~count=1 "linking $description $name" {
+            (toolchain:exec c++ ^tc-flags ^flags ^abi-flags -o (Path:join $path $abiname)
+                ^start-group-flag ^(ModuleLink:unwrap $link) ^end-group-flag)
+            ()
+        }
         # Make symlinks
         Iter:map (fn (std:MapEntry:@ :to :from) -> fs:copy ~shallow=symbolic (Path:from $from) <| Path:join $path $to) $links
         $path
@@ -302,7 +303,10 @@ static-link = fn (Path :source) (String :name) (Array:of $Path |> :link) -> {
     cache ~key=$key {
         path = Path:owned $path
         fs:create-dir <| Path:parent $path
-        task ~count=1 "creating static library $name" <| toolchain:exec ar -crs $path ^link
+        task ~count=1 "creating static library $name" {
+            toolchain:exec ar -crs $path ^link
+            ()
+        }
         $path
     }
 }

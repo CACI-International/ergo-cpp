@@ -13,7 +13,6 @@ dist = fn :module -> {
     c++:Module:@ { :output, ^_ } = $module
     fs:remove $out
     fs:create-dir $out
-    fs:copy $output $out
     Iter:map (fn :f -> fs:copy $f $out) <| c++:Module:runtime $module
     ()
 }
