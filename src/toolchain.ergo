@@ -117,6 +117,7 @@ toolchain = fn {
     }
 
     tc-env = (Map:from <| Iter:map (fn (MapEntry:@ :k :ps) -> MapEntry:new $k (join-paths $ps)) <|
+        # We merge because `system-libpath-env` may itself be `PATH`.
         std:merge { PATH = $paths } { :$system-libpath-env = $library-paths }
     )
 

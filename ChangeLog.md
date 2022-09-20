@@ -1,7 +1,7 @@
 # ergo-c++ changelog
 
 ## Unreleased (0.12)
-* Update to ergo rc.4.
+* Update to ergo-1.0.0rc.4.
 * Completely refactor the organization of modules and how they are evaluated.
   * Module creation (`module`, `compiled-module`, `exe`, `dynamic-library`,
     `static-library`), helpers (`all-files`, `header-paths`, `exact-name`), and

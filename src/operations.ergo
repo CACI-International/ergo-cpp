@@ -262,8 +262,7 @@ link = fn :description (Path :source) (String :name) (Array:of $ModuleLink |> :l
         path = Path:owned $path
         fs:create-dir $path
         task ~count=1 "linking $description $name" {
-            (toolchain:exec c++ ^tc-flags ^flags ^abi-flags -o (Path:join $path $abiname)
-                ^start-group-flag ^(ModuleLink:unwrap $link) ^end-group-flag)
+            toolchain:exec c++ ^tc-flags ^flags ^abi-flags -o (Path:join $path $abiname) ^start-group-flag ^(ModuleLink:unwrap $link) ^end-group-flag
             ()
         }
         # Make symlinks
