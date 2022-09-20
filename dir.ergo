@@ -941,6 +941,7 @@ static-library = context-fn :ctx (source = std:Path:or-source :source) {
             file
             link = [ModuleLink:StaticLib :file, ^module-link:subset [StaticLib,DynamicLib,Flag] mod:link]
             runtime = mod:runtime
+            runtime-direct* = mod:runtime-direct*
             header-dirs = mod:header-dirs
             header-deps = mod:header-deps
             compile-commands = mod:compile-commands

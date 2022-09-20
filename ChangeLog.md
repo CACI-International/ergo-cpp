@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.11.15  -- 2022-09-20
+* Fix the propagation of direct runtime dependencies through static libraries.
+
 ## 0.11.14  -- 2022-06-21
 * Ensure detection works with both newer libstdc++ headers and older ones.
   * The fix from 0.11.13 doesn't seem to work with older versions for some
