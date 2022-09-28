@@ -56,13 +56,7 @@ path-to-include = fn ((into $Path) :p) -> String:join "/" <| match (Path:split $
     :rest -> $rest
 ]
 
-ShareContext = fn :T -> fn :tgt -> T :result -> {
-    # Reuse loaded modules based on module content and the context.
-    T $tgt = #std:once <| modify-context (fn :c -> $c) $result
-    ()
-}
-
-Modules = Array:of <| ShareContext $Module
+Modules = Array:of Module:WithContext
 Uses = fn :tgt -> match:value [
     { private = default (Modules :private) as []
       public = default (Modules :public) as []
@@ -103,7 +97,7 @@ Uses = fn :tgt -> match:value [
 ## relative path explicitly, pass the keyed argument `relative-dir`.
 ## 
 ## The returned value will be a `Module`.
-module = fn ~(std:Path:or-source ~parent :relative-dir) :config -> Module:new {
+module = fn ~(std:Path:or-source ~parent :relative-dir) :config -> Module:new <| std:variable ~depends=[$relative-dir,$config] {
     {
         ~(default (Array :files) as [])
         ~(default (Map :headers) as {})
@@ -119,8 +113,8 @@ module = fn ~(std:Path:or-source ~parent :relative-dir) :config -> Module:new {
     } ^uses
 
     include = {
-        dir = ops:header-dir $relative-dir $headers
-        files = {
+        Path :dir = ops:header-dir $relative-dir $headers
+        Map :files = {
             into $Array |> :public-headers = get-public-headers ^uses:public
             into $Map |> :private-headers = Module:visit {
                 filter = _ -> std:Bool:false
@@ -222,13 +216,13 @@ eval-flags = fn {:compile-flags, :c-compile-flags} :v -> {
 ##
 ## The Module `output` is the executable file.
 exe = fn (source = std:Path:or-source :source) {
-    name = String :name
-    module
-    compile-flags = default (Array :compile-flags) as []
-    c-compile-flags = default (Array :c-compile-flags) as []
-    link-flags = default (Array :link-flags) as []
-} -> Module:new <| eval-flags {compile-flags,c-compile-flags} {
-    (ShareContext $Module) :module = $module
+    ~(String :name)
+    ~(Module :module)
+    ~(default (Array :compile-flags) as [])
+    ~(default (Array :c-compile-flags) as [])
+    ~(default (Array :link-flags) as [])
+} -> Module:new <| std:variable ~depends=[$source,$name,$module,$compile-flags,$c-compile-flags,$link-flags] <| eval-flags {compile-flags,c-compile-flags} {
+    Module:WithContext :module = $module
     into $Array |> :link = Iter:unique <| Module:visit {
         filter = fn _ :f -> std:Bool:not f:hide-link
         map = fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
@@ -257,14 +251,14 @@ exe = fn (source = std:Path:or-source :source) {
 ##
 ## The Module `output` is the dynamic library file.
 dynamic-library = fn (source = std:Path:or-source :source) {
-    name = String :name
-    module
-    compile-flags = default (Array :compile-flags) as []
-    c-compile-flags = default (Array :c-compile-flags) as []
-    link-flags = default (Array :link-flags) as []
-    abi-version = std:optional (String :abi-version)
-} -> Module:new <| eval-flags {compile-flags,c-compile-flags} {
-    (ShareContext $Module) :module = $module
+    ~(String :name)
+    ~(Module :module)
+    ~(default (Array :compile-flags) as [])
+    ~(default (Array :c-compile-flags) as [])
+    ~(default (Array :link-flags) as [])
+    ~(std:optional (String :abi-version))
+} -> Module:new <| std:variable ~depends=[$name,$module,$compile-flags,$c-compile-flags,$link-flags,$abi-version] <| eval-flags {compile-flags,c-compile-flags} {
+    Module:WithContext :module = $module
     into $Array |> :link = Iter:unique <| Module:visit {
         filter = fn _ :f -> std:Bool:not f:hide-link
         map = fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
@@ -290,12 +284,12 @@ dynamic-library = fn (source = std:Path:or-source :source) {
 ##
 ## The Module `output` is the static library archive file.
 static-library = fn (source = std:Path:or-source :source) {
-    name = String :name
-    module
-    compile-flags = default (Array :compile-flags) as []
-    c-compile-flags = default (Array :c-compile-flags) as []
-} -> Module:new <| eval-flags {compile-flags,c-compile-flags} {
-    (ShareContext $Module) :module = $module
+    ~(String :name)
+    ~(Module :module)
+    ~(default (Array :compile-flags) as [])
+    ~(default (Array :c-compile-flags) as [])
+} -> Module:new <| std:variable ~depends=[$name,$module,$compile-flags,$c-compile-flags] <| eval-flags {compile-flags,c-compile-flags} {
+    Module:WithContext :module = $module
     link = Iter:unique <| Module:visit {
         filter = fn _ :f -> std:Bool:not f:hide-link
         map = fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
