@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.11.16  -- 2022-09-29
+* Fix a bug in header tracking (when `include-dependencies` is `relaxed`).
+
 ## 0.11.15  -- 2022-09-20
 * Fix the propagation of direct runtime dependencies through static libraries.
 

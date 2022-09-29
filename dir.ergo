@@ -654,8 +654,8 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
     # compilation of files in this module).
     includes = to-includes (!Array header-dirs:internal)
 
-    # headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses 
-    # ban internal header-deps so that if they are used, an error will occur about exposing a private module
+    # Headers should have file-deps based on the external `uses` header-deps to ensure no headers depends on internal uses.
+    # Ban internal header-deps so that if they are used, an error will occur about exposing a private module.
     Array :mod-header-deps = Array:from <| Iter:no-errors <| Iter:map (fn (std:MapEntry:@ :to :from) -> !{
         v = !std:eval <| match ctx:options:include-dependencies [
             accurate -> !fs:track :from
@@ -672,7 +672,7 @@ module = context-fn :ctx (relative-dir = std:Path:or-source ^parent :relative-di
             std:bind:or c C -> { compiler = cc, flags = :c-compile-flags }
             _ -> { compiler = c++, flags = :compile-flags }
         ]
-        include-flags = match ctx:options:include-dependencies [accurate -> :includes, relaxed -> []]
+        Array :include-flags = match ctx:options:include-dependencies [accurate -> :includes, relaxed -> []]
         f = !std:eval <| set-file-deps ctx:toolchain :f :compiler [] [^:include-flags,^:flags] header-deps:internal
         compile ctx:options:cache-policy ctx:toolchain ctx:project-root :f :compiler :includes ^:flags
     }) :files
