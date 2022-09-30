@@ -3,7 +3,7 @@ std:import { :context, :modify-context } = load context
 
 Self = std:Type:new "ergo-cpp:Module"
 
-Self = std:trait:Display:impl (fn (Self:@ :m) -> "ergo-cpp:Module $m") $Self
+# Self = std:trait:Display:impl (fn (Self:@ :m) -> "ergo-cpp:Module $m") $Self
 
 ## Visit modules and their uses.
 ##
@@ -105,8 +105,7 @@ exec = fn (Self :module) ~(default :runtime-uses as []) ^:args -> {
 ##
 ## Arguments: `:tgt -> Module :mod`
 WithContext = fn :tgt -> Self :mod -> {
-    # Reuse loaded modules based on module content and the context.
-    Self $tgt = std:once <| modify-context (fn :c -> $c) $mod
+    Self $tgt = modify-context (fn :c -> $c) $mod
     ()
 }
 
@@ -161,8 +160,8 @@ std:Type:modify $Self {
     ## Create a new module. See `Module` documentation.
     ##
     ## Arguments: `:content`
-    new = fn :v -> Self:new <| std:if $context $v else (std:Error:new "Modules must have a context bound")
-    @ = Self:@
+    new = fn :v -> Self:new <| std:once <| std:if $context $v else { std:backtrace (); std:Error:new "Modules must have a context bound" }
+    @ = fn :tgt -> Self:@ (std:Map $tgt)
     visit
     compile-commands
     runtime
