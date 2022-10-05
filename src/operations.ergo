@@ -7,7 +7,7 @@ std:import :ModuleLink = load ModuleLink
 
 # TODO flags passed to `compile` should account for identities correctly (wrt untracked-flags)
 
-toolchain-compile-flags = fn :toolchain :compiler -> !id <| match $compiler [
+toolchain-compile-flags = fn :toolchain :compiler -> match $compiler [
     cc -> [
         ^toolchain:c-compile-flags
         ^{default :x as [] = toolchain:extra-c-compile-flags; $x}
@@ -39,8 +39,8 @@ for-file = fn :compiler (Path :file) ^:flags -> {
     std:import { :project-root, options={:cache-policy}, :toolchain } = $context
     Path :proj-path = Path:relative $project-root $file
     tracked-file = workspace:track $file
-    tc-flags = toolchain-compile-flags $toolchain $compiler
-    compiler = !id toolchain:tools:$compiler
+    tc-flags = std:eval-id <| toolchain-compile-flags $toolchain $compiler
+    compiler = std:eval-id toolchain:tools:$compiler
     configuration-id = [$compiler, $tc-flags, $flags]
     String :policy = match $cache-policy [
         configuration -> std:identity $configuration-id
@@ -103,14 +103,14 @@ for-file = fn :compiler (Path :file) ^:flags -> {
         }
         Array :exist-depends = Array:from <| Iter:map workspace:track $exists
         banned-check = if $private-headers (fn :x -> if private-headers:$x { Error:new ~source=$file "private include ($x) used in public header $proj-path" }) else (fn _ -> ())
-        String :id = cache {
-            into $Array |> :known-depends = Iter:no-errors <| Iter:map (fn :dep -> !id <| match known-headers:$dep [
+        String :new-id = cache {
+            into $Array |> :known-depends = Iter:no-errors <| Iter:map (fn :dep -> std:eval-id <| match known-headers:$dep [
                     $unset -> banned-check $dep
                     :v -> $v
             ]) $to-check
             std:identity [$exist-depends, $known-depends, $tracked-file, $configuration-id]
         }
-        std:variable ~depends=$id $file
+        id ~set=$new-id $file
     }
 
     ## Create a compiled file.
@@ -247,8 +247,8 @@ link = fn :description (Path :source) (String :name) (Array:of $ModuleLink |> :l
     ]
 
     Path :proj-path = Path:relative $project-root $source
-    tc-flags = !id toolchain:link-flags
-    linker = !id toolchain:tools:c++
+    tc-flags = std:eval-id toolchain:link-flags
+    linker = std:eval-id toolchain:tools:c++
     configuration-id = [$linker, $tc-flags, $abi-version, $flags]
     String :policy = match $cache-policy [
         configuration -> std:identity $configuration-id
@@ -289,7 +289,7 @@ static-link = fn (Path :source) (String :name) (Array:of $Path |> :link) -> {
     std:import { :project-root, :toolchain, options={:cache-policy} } = $context
 
     Path :proj-path = Path:relative $project-root $source
-    archiver = !id toolchain:tools:ar
+    archiver = std:eval-id toolchain:tools:ar
     configuration-id = [$archiver]
     String :policy = match $cache-policy [
         configuration -> std:identity $configuration-id

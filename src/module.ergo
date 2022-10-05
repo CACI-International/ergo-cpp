@@ -56,17 +56,17 @@ path-to-include = fn ((into $Path) :p) -> String:join "/" <| match (Path:split $
     :rest -> $rest
 ]
 
-Modules = Array:of Module:WithContext
+Modules = fn :tgt -> default (Array:of Module:WithContext |> $tgt) as []
 Uses = fn :tgt -> match:value [
-    { private = default (Modules :private) as []
-      public = default (Modules :public) as []
-      export = default (Modules :export) as []
+    { private = Modules :private
+      public = Modules :public
+      export = Modules :export
     } -> {
         $tgt = { private, public, export }
         ()
     }
 
-    default (Modules :uses) as [] -> {
+    Modules :uses -> {
         $tgt = { private = $uses, public = [], export = [] }
         ()
     }
@@ -78,7 +78,7 @@ Uses = fn :tgt -> match:value [
 ## function arguments.
 ModuleFn = fn :tgt -> :generator -> {
     ## $(doc $generator)
-    $tgt = :args -> Module:new <| !id ~set=std:Bool:false (bind $generator $args)
+    $tgt = :args -> Module:new (bind $generator $args)
     ()
 }
 

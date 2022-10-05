@@ -160,7 +160,7 @@ std:Type:modify $Self {
     ## Create a new module. See `Module` documentation.
     ##
     ## Arguments: `:content`
-    new = fn :v -> Self:new <| std:once <| std:if $context $v else { std:backtrace (); std:Error:new "Modules must have a context bound" }
+    new = fn :v -> Self:new <| std:once <| std:if $context $v else (std:Error:new "Modules must have a context bound")
     @ = fn :tgt -> Self:@ (std:Map $tgt)
     visit
     compile-commands

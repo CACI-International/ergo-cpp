@@ -35,7 +35,7 @@ context = $?ergo-cpp-context
 ## Returns `value` evaluated and with the context bound.
 bind-context = {
     Options = fn :target -> std:default {
-        ~(std:default :cache-policy as configuration)
+        ~(std:default (std:String :cache-policy) as configuration)
     } as {} -> {
         $target = { cache-policy }
         ()
@@ -46,7 +46,7 @@ bind-context = {
         ~(std:Map :toolchain)
         ~(Options :options)
         ^:custom
-    } (std:Type:any :value) -> !id {
+    } (std:Type:any :value) -> {
         # We evaluate `value` specifically for Modules, so that all uses are loaded when the late
         # binding occurs. Ergo might be able to help us out with this in the future.
         std:Map :c = { project-root, toolchain, options, custom }

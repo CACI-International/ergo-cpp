@@ -19,9 +19,9 @@ bind-context = fn :project-root :mod -> c++:bind-context { project-root, toolcha
                 $mod
             }
             a = make-module [foo.cpp]
-            String :a = std:identity <| !id a:link
+            String :a = std:identity <| std:eval-id a:link
             b = make-module [foo.cpp]
-            String :b = std:identity <| !id b:link
+            String :b = std:identity <| std:eval-id b:link
             std:equal $a $b
         }
         change = test <| fn :path -> {
@@ -33,9 +33,9 @@ bind-context = fn :project-root :mod -> c++:bind-context { project-root, toolcha
                 $mod
             }
             a = make-module [foo.cpp]
-            String :a = std:identity <| !id a:link
+            String :a = std:identity <| std:eval-id a:link
             b = make-module [foo.cpp, bar.cpp]
-            String :b = std:identity <| !id b:link
+            String :b = std:identity <| std:eval-id b:link
             std:Bool:not <| std:equal $a $b
         }
         content = {
@@ -50,16 +50,16 @@ bind-context = fn :project-root :mod -> c++:bind-context { project-root, toolcha
             {
                 :"no change" = test <| fn :path -> {
                     a = make-module $path 0
-                    String :a = std:identity <| !id a:link
+                    String :a = std:identity <| std:eval-id a:link
                     b = make-module $path 0
-                    String :b = std:identity <| !id b:link
+                    String :b = std:identity <| std:eval-id b:link
                     std:equal $a $b
                 }
                 change = test <| fn :path -> {
                     a = make-module $path 0
-                    String :a = std:identity <| !id a:link
+                    String :a = std:identity <| std:eval-id a:link
                     b = make-module $path 1
-                    String :b = std:identity <| !id b:link
+                    String :b = std:identity <| std:eval-id b:link
                     std:Bool:not <| std:equal $a $b
                 }
             }
@@ -80,9 +80,9 @@ bind-context = fn :project-root :mod -> c++:bind-context { project-root, toolcha
                 $mod
             }
             a = make-module [foo.h]
-            String :a = std:identity <| !id a:include
+            String :a = std:identity <| std:eval-id a:include
             b = make-module [foo.h, bar.h]
-            String :b = std:identity <| !id b:include
+            String :b = std:identity <| std:eval-id b:include
             std:Bool:not <| std:equal $a $b
         }
         :"content change" = test <| fn :path -> {
@@ -99,9 +99,9 @@ bind-context = fn :project-root :mod -> c++:bind-context { project-root, toolcha
                 $mod
             }
             a = make-module 0
-            String :a = std:identity <| !id a:include
+            String :a = std:identity <| std:eval-id a:include
             b = make-module 1
-            String :b = std:identity <| !id b:include
+            String :b = std:identity <| std:eval-id b:include
             std:Bool:not <| std:equal $a $b
         }
         :"content change cpp dependency" = test <| fn :path -> {
@@ -122,9 +122,9 @@ bind-context = fn :project-root :mod -> c++:bind-context { project-root, toolcha
                 $mod
             }
             a = make-module 0
-            String :a = std:identity <| !id a:link
+            String :a = std:identity <| std:eval-id a:link
             b = make-module 1
-            String :b = std:identity <| !id b:link
+            String :b = std:identity <| std:eval-id b:link
             std:Bool:not <| std:equal $a $b
         }
     }

@@ -74,9 +74,9 @@ toolchain = fn {
     :target-triple
     override = default (Map:of $String std:Type:any |> :override) as {}
 
-    compile-flags = default :compile-flags as []
-    c-compile-flags = default :c-compile-flags as []
-    link-flags = default :link-flags as []
+    compile-flags = default (Array :compile-flags) as []
+    c-compile-flags = default (Array :c-compile-flags) as []
+    link-flags = default (Array :link-flags) as []
 } -> {
     search = fn (String :tool) -> {
         prefixed = Iter:map (fn :path -> Path:join $path "$(target-triple)-$tool") $paths
