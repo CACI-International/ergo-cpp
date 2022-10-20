@@ -3,7 +3,7 @@ std:import {
     :cache, :default, :exec, :fs, :if, :match, :task, trait={Into={:into}}
 } = $std
 std:import { :context } = load context
-std:import :ModuleLink = load ModuleLink
+std:import :Link = load Link
 
 # TODO flags passed to `compile` should account for identities correctly (wrt untracked-flags)
 
@@ -115,7 +115,7 @@ for-file = fn :compiler (Path :file) ^:flags -> {
 
     ## Create a compiled file.
     compiled = fn { public-headers = Array :public-headers } -> {
-        tracked-file = track-cpp { public-headers }
+        Path :tracked-file = track-cpp { public-headers }
         include-flags = to-includes <| Iter:map (fn :hdr -> hdr:dir) $public-headers
         obj = Path:join std:env:project-dir c++ $key
 
@@ -162,7 +162,7 @@ for-file = fn :compiler (Path :file) ^:flags -> {
 header-dir = fn (Path :dir) :headers -> {
     std:import { :project-root, options={:cache-policy} } = $context
     Path :proj-path = Path:relative $project-root $dir
-    tracked-headers = Map:from <| Iter:map (fn :e -> std:MapEntry:new e:key (workspace:track <| Path:join $dir e:value)) $headers
+    into $Map |> :tracked-headers = Iter:map (fn :e -> std:MapEntry:new e:key (workspace:track <| Path:join $dir e:value)) $headers
     String :policy = match $cache-policy [
         configuration -> std:identity $headers
         content -> std:identity $tracked-headers
@@ -181,7 +181,7 @@ header-dir = fn (Path :dir) :headers -> {
 
 ## Link files.
 ##
-## Arguments: `:description (Path :source) (String :name) (Array:of $$ModuleLink |> :link) ^:flags`
+## Arguments: `:description (Path :source) (String :name) (Array:of $$Link |> :link) ^:flags`
 ##
 ## Keyed Arguments:
 ## * `abi-version` - the abi version to set, if any. If set, appropritae abi version links will be
@@ -193,7 +193,7 @@ header-dir = fn (Path :dir) :headers -> {
 ## * `file` - the linked file
 ## * `links` - an Array of symlinks implementing the file ABI interface. This will be empty if and
 ## only if `abi-version` is unset.
-link = fn :description (Path :source) (String :name) (Array:of $ModuleLink |> :link) ~:abi-version ^:flags -> {
+link = fn :description (Path :source) (String :name) (Array:of $Link |> :link) ~:abi-version ^:flags -> {
     std:import { :project-root, :toolchain, options={:cache-policy} } = $context
     os = toolchain:target:os
     start-group-flag = match $os [
@@ -260,9 +260,10 @@ link = fn :description (Path :source) (String :name) (Array:of $ModuleLink |> :l
 
     path = cache ~key=$key {
         path = Path:owned $path
+        fs:remove $path
         fs:create-dir $path
         task ~count=1 "linking $description $name" {
-            toolchain:exec c++ ^tc-flags ^flags ^abi-flags -o (Path:join $path $abiname) ^start-group-flag ^(ModuleLink:unwrap $link) ^end-group-flag
+            toolchain:exec c++ ^tc-flags ^flags ^abi-flags -o (Path:join $path $abiname) ^start-group-flag ^(Link:unwrap $link) ^end-group-flag
             ()
         }
         # Make symlinks

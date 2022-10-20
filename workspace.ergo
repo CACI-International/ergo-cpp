@@ -1,7 +1,7 @@
 log = std:log:sublog c++
 
 # Alias `std:fs:track` to change `force-check` in tests.
-track = fn :file -> std:fs:track (std:Type:any :force-check = std:dynamic:get test) $file
+track = id ~eval=force <| fn :file -> std:fs:track (std:Type:any :force-check = std:dynamic:get test) $file
 
 ## Commands
 ##

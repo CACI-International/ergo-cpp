@@ -6,9 +6,9 @@
   * Module creation (`module`, `compiled-module`, `exe`, `dynamic-library`,
     `static-library`), helpers (`all-files`, `header-paths`, `exact-name`), and
     toolchains (`toolchain`, `env-toolchain`) all have the same API as before.
-  * `Module` and `ModuleLink` are now directly exposed (no longer under `type`),
-    are specified more thoroughly, and have associated functions in each type
-    index.
+  * `Module` and `Link` (previously `ModuleLink`) are now directly exposed (no
+    longer under `type`), are specified more thoroughly, and have associated
+    functions in each type index.
   * `context` is applied with `bind-context` to prevent mistakes.
   * `Module`s no longer flatten the dependency hierarchy.
 * Break up the one big implementation file for better maintenance.

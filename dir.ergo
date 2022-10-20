@@ -15,7 +15,7 @@
 ## (using `bind-context`) which determines the configuration of the module.
 {
     std:import :Module = load src/Module
-    std:import :ModuleLink = load src/ModuleLink
+    std:import :Link = load src/Link
     std:import { :context, :bind-context, :modify-context } = load src/context
     ^load src/module
     ^load src/toolchain

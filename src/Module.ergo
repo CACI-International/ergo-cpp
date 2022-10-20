@@ -5,6 +5,12 @@ Self = std:Type:new "ergo-cpp:Module"
 
 # Self = std:trait:Display:impl (fn (Self:@ :m) -> "ergo-cpp:Module $m") $Self
 
+# We evaluate each inner iterator to `Iter` with an `Iter:map` call so that the
+# provided `map` function occurs concurrently (otherwise `Iter:flatten` only
+# evaluates each to an `Iter` on an as-needed basis). Without this, evaluation
+# occurs sequentially, which is not ideal.
+eager-flatten = fn :entries -> Iter:flatten <| Iter:map (fn (std:trait:Into:into $Iter |> :m) -> $m) $entries
+
 ## Visit modules and their uses.
 ##
 ## Arguments: `(Map :config) ^:modules`
@@ -18,7 +24,8 @@ Self = std:Type:new "ergo-cpp:Module"
 ## * `map` - a function that is called on each module's inner Map and should return a type `T`
 ## (defaults to returning the Map as the single element within an Array).
 ## * `reduce` - a function called on an Iter of `T` that should return `T` (defaults to
-## `Iter:flatten`, assuming `T` as `into $$Iter`).
+## `Iter:flatten` that eagerly evaluates `T` to ensure concurrent `map` calls, assuming `T` as `into
+## $$Iter`).
 ##
 ## Notice that if `config` is left as all defaults, the result is all inner Maps of the modules
 ## being returned as an Iter.
@@ -27,9 +34,9 @@ Self = std:Type:new "ergo-cpp:Module"
 visit = fn {
     ~(default :filter as (_ -> std:Bool:true))
     map = default :map as (fn :m -> [$m])
-    ~(default :reduce as Iter:flatten)
+    ~(default :reduce as $eager-flatten)
 } ^:modules -> {
-    do-visit = std:recurse <| :self -> fn ^:modules -> {
+    do-visit = std:recurse <| :self -> fn ^:modules -> std:once {
         reduce <| Iter:flatten <| Iter:map (fn (Self:@ :m) -> {
             reduced-uses = (self ^<| Array:from
                 <| Iter:map (fn :u -> u:module)
@@ -74,6 +81,17 @@ runtime = fn ^:modules -> Iter:unique <| visit {
         _ -> []
     ]
 } ^modules
+
+## Evaluate the include, link, and runtime fields of the given modules.
+##
+## This is useful if you simply want Modules to be built.
+evaluate = fn ^:modules -> {
+    visit {
+        filter = _ -> std:Bool:false
+        map = fn :m -> [m:include, m:link, m:runtime]
+    } ^modules
+    ()
+}
 
 ## Execute the output of a module.
 ##
@@ -132,7 +150,7 @@ WithContext = fn :tgt -> Self :mod -> {
 ##   use the resolved files from the map and will also be able to check for dependency mistakes
 ##   (like the use of private headers).
 ## * `Array :link` - files that need to be linked (or link flags) to implement the module's
-## features. Elements should be `ModuleLink` values.
+## features. Elements should be `Link` values.
 ## * `Array :uses` - the modules that this module uses. Each item must be a Map with the following
 ## keys:
 ##   * `Module :module` - the module
@@ -160,11 +178,12 @@ std:Type:modify $Self {
     ## Create a new module. See `Module` documentation.
     ##
     ## Arguments: `:content`
-    new = fn :v -> Self:new <| std:once <| std:if $context $v else (std:Error:new "Modules must have a context bound")
+    new = fn :v -> Self:new <| std:eval-id <| std:once <| std:if $context $v else (std:Error:new "Modules must have a context bound")
     @ = fn :tgt -> Self:@ (std:Map $tgt)
     visit
     compile-commands
     runtime
+    evaluate
     exec
     WithContext
 }

@@ -3,7 +3,7 @@ std:import {
     :default, :fs, :if, :match, trait={Into={:into}}
 } = $std
 std:import :Module = load Module
-std:import :ModuleLink = load ModuleLink
+std:import :Link = load Link
 std:import :ops = load operations
 std:import { :context, :modify-context } = load context
 
@@ -73,14 +73,18 @@ Uses = fn :tgt -> match:value [
 ]
 
 ## Create a function which returns a Module, and will only bind the function arguments within the Module
-## (so that the arguments may access the context). The result of the generator is prevented from
-## evaluating during identity calculation, so that the identity of the module only relies on the
-## function arguments.
+## (so that the arguments may access the context).
 ModuleFn = fn :tgt -> :generator -> {
     ## $(doc $generator)
-    $tgt = :args -> Module:new (bind $generator $args)
+    $tgt = :args -> Module:new <| bind $generator $args
     ()
 }
+
+get-public-headers = fn ^:uses -> Iter:unique <| Module:visit {
+    filter = fn _ :f -> std:Bool:not f:hide-include
+    map = fn :m -> match m:include [Array :i -> $i, _ -> []]
+} ^uses
+
 
 ## Create a module with the given configuration.
 ##
@@ -115,15 +119,7 @@ ModuleFn :module = fn ~(std:Path:or-source ~parent :relative-dir) {
     ~(default (Array :c-compile-flags) as [])
     :custom
 } -> {
-    # Move bindings into this scope to prevent eager identity evaluation.
-    files, headers, uses, compile-flags, c-compile-flags, custom
-
-    get-public-headers = fn ^:uses -> Iter:unique <| Module:visit {
-        filter = fn _ :f -> std:Bool:not f:hide-include
-        map = fn :m -> match m:include [Array :i -> $i, _ -> []]
-    } ^uses
-
-    include = {
+    Array :include = {
         Path :dir = ops:header-dir $relative-dir $headers
         Map :files = {
             into $Array |> :public-headers = get-public-headers ^uses:public
@@ -161,7 +157,7 @@ ModuleFn :module = fn ~(std:Path:or-source ~parent :relative-dir) {
         }) $files
     }
 
-    into $Array |> :link = Iter:map (fn :o -> ModuleLink:Object o:object) $compiled
+    into $Array |> :link = Iter:map (fn :o -> Link:Object o:object) $compiled
     into $Array |> :compile-commands = Iter:map (fn :o -> o:compile-command) $compiled
 
     into $Array |> :uses = Iter:flatten [
@@ -206,9 +202,13 @@ rename = fn :f :name -> match $name [
     :name -> context:toolchain:target:$f $name
 ]
 
-eval-flags = fn {:compile-flags, :c-compile-flags} :v -> {
-    modify-context (fn :m -> std:merge $m { toolchain = { compile-flags, c-compile-flags } }) $v
-}
+## Bind a Map to allow additional `compile-flags` and `c-compile-flags` keys, which will be added to
+## the context prior to binding the remaining keys of the map.
+AddCompileFlags = fn :target -> {
+    ~(default (Array :compile-flags) as [])
+    ~(default (Array :c-compile-flags) as [])
+    ^:config-rest
+} -> modify-context (fn :m -> std:merge $m { toolchain = { compile-flags, c-compile-flags } }) (bind $target $config-rest)
 
 ## Create an executable module from a module.
 ##
@@ -222,19 +222,14 @@ eval-flags = fn {:compile-flags, :c-compile-flags} :v -> {
 ## * `optional (Array :link-flags)` - additional link flags to use
 ##
 ## The Module `output` is the executable file.
-ModuleFn :exe = fn (source = std:Path:or-source :source) {
+ModuleFn :exe = fn (source = std:Path:or-source :source) (AddCompileFlags {
     ~(String :name)
     ~(Module:WithContext :module)
-    ~(default (Array :compile-flags) as [])
-    ~(default (Array :c-compile-flags) as [])
     ~(default (Array :link-flags) as [])
-} -> eval-flags { compile-flags, c-compile-flags } {
-    name, link-flags
-    Module:WithContext :module = $module
-
+}) -> {
     into $Array |> :link = Iter:unique <| Module:visit {
         filter = fn _ :f -> std:Bool:not f:hide-link
-        map = fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
+        map = fn :m -> match m:link [Array:of $Link |> :l -> $l, _ -> []]
     } $module
     {:file, ^_} = ops:link executable $source (rename exe-name $name) $link ^link-flags
     {
@@ -259,25 +254,20 @@ ModuleFn :exe = fn (source = std:Path:or-source :source) {
 ##   `X[.Y[.Z]]`, where `X`, `Y`, and `Z` are non-negative integers.
 ##
 ## The Module `output` is the dynamic library file.
-ModuleFn :dynamic-library = fn ~(std:Path:or-source :source) {
+ModuleFn :dynamic-library = fn ~(std:Path:or-source :source) (AddCompileFlags {
     ~(String :name)
-    ~(Module :module)
-    ~(default (Array :compile-flags) as [])
-    ~(default (Array :c-compile-flags) as [])
+    ~(Module:WithContext :module)
     ~(default (Array :link-flags) as [])
     ~(std:optional (String :abi-version))
-} -> eval-flags {compile-flags,c-compile-flags} {
-    name, link-flags, abi-version
-    Module:WithContext :module = $module
-
+}) -> {
     into $Array |> :link = Iter:unique <| Module:visit {
         filter = fn _ :f -> std:Bool:not f:hide-link
-        map = fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
+        map = fn :m -> match m:link [Array:of $Link |> :l -> $l, _ -> []]
     } $module
     {:file, :links} = ops:link "dynamic library" $source (rename dynamic-library-name $name) $link ^{abi-version} -shared ^link-flags
     {
         output = $file
-        link = [ModuleLink:DynamicLib $file] # TODO add runtime?
+        link = [Link:DynamicLib $file] # TODO add runtime?
         runtime = [$file,^links]
         uses = [{module, ~hide-link}]
     }
@@ -294,26 +284,21 @@ ModuleFn :dynamic-library = fn ~(std:Path:or-source :source) {
 ## * `optional (Array :c-compile-flags)` - additional C compile flags to use
 ##
 ## The Module `output` is the static library archive file.
-ModuleFn :static-library = fn (source = std:Path:or-source :source) {
+ModuleFn :static-library = fn (source = std:Path:or-source :source) (AddCompileFlags {
     ~(String :name)
-    ~(Module :module)
-    ~(default (Array :compile-flags) as [])
-    ~(default (Array :c-compile-flags) as [])
-} -> eval-flags {compile-flags,c-compile-flags} {
-    name
-    Module:WithContext :module = $module
-
+    ~(Module:WithContext :module)
+}) -> {
     link = Iter:unique <| Module:visit {
         filter = fn _ :f -> std:Bool:not f:hide-link
-        map = fn :m -> match m:link [Array:of $ModuleLink |> :l -> $l, _ -> []]
+        map = fn :m -> match m:link [Array:of $Link |> :l -> $l, _ -> []]
     } $module
-    objs = ModuleLink:types [Object] $link
-    link = ModuleLink:subset [StaticLib,DynamicLib,Flag] $link
+    objs = Link:types [Object] $link
+    link = Link:subset [StaticLib,DynamicLib,Flag] $link
     file = ops:static-link $source (rename static-library-name $name) $objs
     { 
         output = $file
         # XXX We kind of lose the hierarchy here by moving the links out of the `uses`.
-        link = [ModuleLink:StaticLib $file,^link]
+        link = [Link:StaticLib $file,^link]
         uses = [{module, ~hide-link}]
     }
 }

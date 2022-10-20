@@ -10,7 +10,7 @@ std:import { :Array, :Iter, :Function, :String, :match, trait={Into={:into}} } =
 {
     std:import { :enum, :index, :modify, :pass } = std:Type
 
-    ModuleLink = enum "ergo-cpp:ModuleLink" {
+    Link = enum "ergo-cpp:Link" {
         # These are all `pass` because we don't want to force evaluation of inner values (otherwise
         # evaluation may end up serialized).
         Object = $pass
@@ -19,15 +19,15 @@ std:import { :Array, :Iter, :Function, :String, :match, trait={Into={:into}} } =
         Flag = $pass
     }
 
-    ## Get the inner ModuleLink values with the given types.
+    ## Get the inner Link values with the given types.
     ##
     ## Arguments: `(Array:of $$String |> :types) (into $$Iter |> :link)`
     ##
     ## Returns an Array.
     types = fn (Array:of $String |> :types) (into $Iter |> :link) -> (
         $link
-        | Iter:map (fn (ModuleLink :x) -> match $x [
-            ^Array:from <| Iter:map (fn :type -> ModuleLink:@:$type :s -> {val = $s}) $types
+        | Iter:map (fn (Link :x) -> match $x [
+            ^Array:from <| Iter:map (fn :type -> Link:@:$type :s -> {val = $s}) $types
             _ -> std:Bool:false
             ])
         | Iter:true
@@ -35,17 +35,17 @@ std:import { :Array, :Iter, :Function, :String, :match, trait={Into={:into}} } =
         | Array:from
     )
 
-    ## Get the ModuleLink values with the given types.
+    ## Get the Link values with the given types.
     ##
     ## Arguments: `(Array:of $$String |> :types) (iter $$Iter |> :link)`
     ##
     ## This differ from `types` as it doesn't unwrap the inner values.
     ##
-    ## Returns an Array of ModuleLink.
+    ## Returns an Array of Link.
     subset = fn (Array:of $String |> :types) (into $Iter |> :link) -> (
         $link
-        | Iter:map (fn (ModuleLink :x) -> match $x [
-            ^Array:from <| Iter:map (fn :type -> std:bind:and :v (ModuleLink:@:$type _) -> {val = $v}) $types
+        | Iter:map (fn (Link :x) -> match $x [
+            ^Array:from <| Iter:map (fn :type -> std:bind:and :v (Link:@:$type _) -> {val = $v}) $types
             _ -> std:Bool:false
             ])
         | Iter:true
@@ -53,29 +53,29 @@ std:import { :Array, :Iter, :Function, :String, :match, trait={Into={:into}} } =
         | Array:from
     )
 
-    ## Map a function over the inner ModuleLink values.
+    ## Map a function over the inner Link values.
     ##
     ## Arguments: `(Function :f) (into $$Iter |> :link)`
     ##
-    ## Returns an Array of ModuleLink.
+    ## Returns an Array of Link.
     map = fn (Function :f) (into $Iter |> :link) -> (
         $link
-        | Iter:map (fn (ModuleLink :x) -> match $x [
-            ^Array:from <| Iter:map (fn :type -> ModuleLink:@:$type :s -> ModuleLink:$type <| f $s) [Object,StaticLib,DynamicLib,Flag]
+        | Iter:map (fn (Link :x) -> match $x [
+            ^Array:from <| Iter:map (fn :type -> Link:@:$type :s -> Link:$type <| f $s) [Object,StaticLib,DynamicLib,Flag]
             _ -> std:Bool:false
             ])
         | Array:from
     )
 
-    ## Get the inner ModuleLink values.
+    ## Get the inner Link values.
     ##
     ## Arguments: `(into $$Iter |> :link)`
     ##
     ## Returns an Array.
     unwrap = Function:partial $types [Object,StaticLib,DynamicLib,Flag]
 
-    modify $ModuleLink {
-        ^index $ModuleLink
+    modify $Link {
+        ^index $Link
         map, subset, types, unwrap
     }
 }
