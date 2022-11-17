@@ -1,6 +1,8 @@
 # ergo-c++ changelog
 
-## Unreleased (0.12)
+## Unreleased
+
+## 0.12.0  -- 2022-11-17
 * Update to ergo-1.0.0rc.4.
 * Completely refactor the organization of modules and how they are evaluated.
   * Module creation (`module`, `compiled-module`, `exe`, `dynamic-library`,
