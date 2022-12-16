@@ -5,6 +5,7 @@
 ## 0.12.1  -- 2022-12-16
 * Rename `src/module.ergo` to not clash with `src/Module.ergo` on
   case-insensitive filesystems.
+* Add `@rpath` to the `install_name` used in mac shared libraries.
 
 ## 0.12.0  -- 2022-11-17
 * Update to ergo-1.0.0rc.4.
