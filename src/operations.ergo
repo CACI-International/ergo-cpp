@@ -217,7 +217,7 @@ link = fn :description (Path :source) (String :name) (Array:of $Link |> :link) ~
             ]
             abi-flags = match $os [
                 macos -> {
-                    install-name = "-Wl,-install_name,$compat-version"
+                    install-name = "-Wl,-install_name,@rpath/$compat-version"
                     match $max-version [
                         0 -> [$install-name]
                         _ -> [
