@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.12.2  -- 2022-12-29
+* Add `link-commands` to `Module`, similar to `compile-commands`.
+
 ## 0.12.1  -- 2022-12-16
 * Rename `src/module.ergo` to not clash with `src/Module.ergo` on
   case-insensitive filesystems.

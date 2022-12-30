@@ -122,13 +122,7 @@ for-file = fn :compiler (Path :file) ^:flags -> {
         # Always enable PIC by default; this works better for not surprising people with code that
         # can't be linked into a dynamic library (either objects or static libraries). The user can
         # always use `-fno-PIC` to undo this.
-        args = Array:from <| Iter:flatten [
-            [$compiler,-fPIC,-c,-o,$obj]
-            $tc-flags
-            $flags
-            $include-flags
-            [$tracked-file]
-        ]
+        args = [$compiler, -fPIC, -c, -o, $obj, ^tc-flags, ^flags, ^include-flags, $tracked-file]
 
         ##std:doc:value
         ## The object file resulting from compiling $proj-path.
@@ -193,6 +187,7 @@ header-dir = fn (Path :dir) :headers -> {
 ## * `file` - the linked file
 ## * `links` - an Array of symlinks implementing the file ABI interface. This will be empty if and
 ## only if `abi-version` is unset.
+## * `link-command` - the command used to create the output
 link = fn :description (Path :source) (String :name) (Array:of $Link |> :link) ~:abi-version ^:flags -> {
     std:import { :project-root, :toolchain, options={:cache-policy} } = $context
     os = toolchain:target:os
@@ -206,6 +201,8 @@ link = fn :description (Path :source) (String :name) (Array:of $Link |> :link) ~
         _     -> []
 
     ]
+
+    flags = Array:from $flags
 
     # Handle abi version specifics
     {:abi-flags,:abiname,:links,^_} = match $abi-version [
@@ -258,14 +255,15 @@ link = fn :description (Path :source) (String :name) (Array:of $Link |> :link) ~
 
     path = Path:join std:env:project-dir c++ $key
 
+    linked = Path:join $path $abiname
+
+    args = [$linker, ^tc-flags, ^flags, ^abi-flags, -o, $linked, ^start-group-flag, ^Link:unwrap $link, ^end-group-flag]
+
     path = cache ~key=$key {
         path = Path:owned $path
         fs:remove $path
         fs:create-dir $path
-        task ~count=1 "linking $description $name" {
-            toolchain:exec c++ ^tc-flags ^flags ^abi-flags -o (Path:join $path $abiname) ^start-group-flag ^(Link:unwrap $link) ^end-group-flag
-            ()
-        }
+        task ~count=1 "linking $description $name" { exec ~env=toolchain:tool-exec-env ^args; () }
         # Make symlinks
         Iter:map (fn (std:MapEntry:@ :to :from) -> fs:copy ~shallow=symbolic (Path:from $from) <| Path:join $path $to) $links
         $path
@@ -274,6 +272,12 @@ link = fn :description (Path :source) (String :name) (Array:of $Link |> :link) ~
     {
         file = Path:join $path $abiname
         links = Array:from <| Iter:map (fn (std:MapEntry:@ :to _) -> Path:join $path $to) $links
+        link-command = {
+            arguments = Array:from <| Iter:map String:from $args
+            files = Array:from <| Iter:map String:from <| Link:types [Object,StaticLib,DynamicLib] $link
+            output = String:from $linked
+            directory = "/"
+        }
     }
 }
 
@@ -285,8 +289,10 @@ link = fn :description (Path :source) (String :name) (Array:of $Link |> :link) ~
 ##
 ## Must have `ergo-cpp:context` available when evaluated.
 ##
-## Returns the archive.
-static-link = fn (Path :source) (String :name) (Array:of $Path |> :link) -> {
+## Returns a map with:
+## * `file` - the archive
+## * `link-command` - the command used to create the output
+static-link = fn (Path :source) (String :name) :link -> {
     std:import { :project-root, :toolchain, options={:cache-policy} } = $context
 
     Path :proj-path = Path:relative $project-root $source
@@ -300,13 +306,22 @@ static-link = fn (Path :source) (String :name) (Array:of $Path |> :link) -> {
 
     path = Path:join std:env:project-dir c++ $key
 
-    cache ~key=$key {
+    args = [$archiver, -crs, $path, ^link]
+
+    file = cache ~key=$key {
         path = Path:owned $path
         fs:create-dir <| Path:parent $path
-        task ~count=1 "creating static library $name" {
-            toolchain:exec ar -crs $path ^link
-            ()
-        }
+        task ~count=1 "creating static library $name" { exec ~env=toolchain:tool-exec-env ^args; () }
         $path
+    }
+
+    {
+        file
+        link-command = {
+            arguments = Array:from <| Iter:map String:from $args
+            files = Array:from <| Iter:map String:from $link
+            output = String:from $file
+            directory = "/"
+        }
     }
 }

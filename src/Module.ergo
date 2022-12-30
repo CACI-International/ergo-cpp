@@ -168,6 +168,12 @@ WithContext = fn :tgt -> Self :mod -> {
 ##   * `String :file` - the input file
 ##   * `String :output` - the output file
 ##   * `String :directory` - the working directory ("/" if paths are absolute)
+## * `Array :link-commands` - link commands associated with the module. Each value should be a
+## Map with the following keys (modelled after `compile_commands.json` format):
+##   * `Array:of $$String |> :arguments` - the arguments (including compiler frontend)
+##   * `Array:of $$String |> :files` - the input files
+##   * `String :output` - the output file
+##   * `String :directory` - the working directory ("/" if paths are absolute)
 ## * `:output` - module-defined output value, e.g. a linked file
 ## * `Map :custom` - extra information to add to the module. It is often best to namespace your
 ## particular custom information in a key that's unlikely to be used by others.
