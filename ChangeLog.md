@@ -1,6 +1,7 @@
 # ergo-c++ changelog
 
 ## Unreleased
+* Fix regression where not all headers are provided to dependency detection.
 
 ## 0.12.2  -- 2022-12-29
 * Add `link-commands` to `Module`, similar to `compile-commands`.
