@@ -80,8 +80,8 @@ ModuleFn = fn :tgt -> :generator -> {
     ()
 }
 
-get-public-headers = fn ^:uses -> Iter:unique <| Module:visit {
-    filter = fn _ :f -> std:Bool:not f:hide-include
+get-headers = fn ~(:public) ^:uses -> Iter:unique <| Module:visit {
+    filter = fn _ :f -> std:Bool:or (std:Bool:not $public) (std:Bool:not f:hide-include)
     map = fn :m -> match m:include [Array :i -> $i, _ -> []]
 } ^uses
 
@@ -122,16 +122,8 @@ ModuleFn :module = fn ~(std:Path:or-source ~parent :relative-dir) {
     Array :include = {
         Path :dir = ops:header-dir $relative-dir $headers
         Map :files = {
-            into $Array |> :public-headers = get-public-headers ^uses:public ^uses:private
-            into $Map |> :private-headers = Module:visit {
-                filter = _ -> std:Bool:false
-                map = fn :m -> (std:Unset:or m:include []
-                    | Iter:map (fn :i -> i:files)
-                    | Iter:true
-                    | Iter:flatten # Maps flattened to MapEntries
-                    | Iter:map (fn :entry -> MapEntry:new entry:key ())
-                )
-            } ^uses:private
+            into $Array |> :public-headers = get-headers ~public ^uses:public
+            into $Array |> :private-headers = get-headers ^uses:private
 
             Map:from <| Iter:no-errors <| Iter:map (fn (MapEntry:@ :to :from) -> {
                 Path :tracked = ops:for-file c++ (Path:join $relative-dir $from) ^compile-flags -I $dir |>:track-cpp {
@@ -146,7 +138,7 @@ ModuleFn :module = fn ~(std:Path:or-source ~parent :relative-dir) {
     }
 
     compiled = {
-        into $Array |> :public-headers = Iter:flatten [$include, get-public-headers ^uses:public ^uses:private]
+        into $Array |> :public-headers = Iter:flatten [$include, get-headers ~public ^uses:public ^uses:private]
         Array:from <| Iter:map (fn :f -> {
             f = Path:join $relative-dir $f
             {:compiler, :flags} = match (String:split . <| Path:name $f):-1 [

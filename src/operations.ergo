@@ -57,18 +57,25 @@ for-file = fn :compiler (Path :file) ^:flags -> {
     ## `public-headers` should be an array of includes (like `:include` of `Module`).
     ## `private-headers` should be a Map where keys are the header paths.
     track-cpp = fn { public-headers = Array :public-headers, :file-type, :private-headers } -> {
-        { ~(default :known-headers as [])
-          ~(default :includes as []) } = Iter:partition (fn :hdr -> if (hdr:files) known-headers else includes) $public-headers
-        public-include-flags = to-includes <| Iter:map (fn :hdr -> hdr:dir) $includes
-        known-headers = Map:from <| Iter:flatten <| Iter:map (fn :hdr -> hdr:files) $includes
-
+        partition-headers = fn :headers -> {
+            { ~(default :files as [])
+              ~(default :dirs as []) } = Iter:partition (fn :hdr -> if (hdr:files) files else dirs) $headers
+            {
+                includes = to-includes <| Iter:map (fn :hdr -> hdr:dir) $dirs
+                headers = Map:from <| Iter:flatten <| Iter:map (fn :hdr -> hdr:files) $files
+            }
+        }
+        { includes = :public-includes, headers = :known-headers } = partition-headers $public-headers
+        { includes = :private-includes, headers = :private-headers } = if $private-headers (partition-headers $private-headers) else { includes = [], headers = {} }
+            
         # Generate and cache the array of dependent files using the toolchain.
         Array :deps = cache ~key=[$key,deps] ~allow-error=top <| task ~count=1 "determining dependencies of $proj-path" {
             file-type-flag = if $file-type "-x$file-type"
             child = exec ~env=toolchain:tool-exec-env $compiler ^[
                 ^tc-flags
                 ^flags
-                ^public-include-flags
+                ^public-includes
+                ^private-includes
                 # get user dependencies, include missing dependencies, and add phony targets for each (which is easier to parse)
                 -DERGO_CPP_HEADER_DEPENDS, -MM, -MG, -MP
                 $file-type-flag
