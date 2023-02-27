@@ -1,6 +1,7 @@
 # ergo-c++ changelog
 
 ## Unreleased
+* Report compiler warnings (as `warn` level log messages).
 
 ## 0.12.2  -- 2022-12-29
 * Add `link-commands` to `Module`, similar to `compile-commands`.

@@ -126,12 +126,19 @@ for-file = fn :compiler (Path :file) ^:flags -> {
 
         ##std:doc:value
         ## The object file resulting from compiling $proj-path.
-        object = cache ~key=$key {
+        [:warnings, :object] = cache ~key=$key {
             obj = Path:owned $obj
             fs:create-dir <| Path:parent $obj
-            task ~count=1 "compiling $proj-path" { exec ~env=toolchain:tool-exec-env ^args; () }
-            $obj
+            warnings = task ~count=1 "compiling $proj-path" {
+                exec ~env=toolchain:tool-exec-env ^args |>:stderr | String:from | String:trim
+            }
+            [$warnings, $obj]
         }
+
+        match $warnings [
+            "" -> ()
+            _ -> std:log:warn $warnings
+        ]
 
         ##std:doc:value
         ## The compile command entry for compiling $proj-path (suitable for `compile_commands.json`).
@@ -259,15 +266,22 @@ link = fn :description (Path :source) (String :name) (Array:of $Link |> :link) ~
 
     args = [$linker, ^tc-flags, ^flags, ^abi-flags, -o, $linked, ^start-group-flag, ^Link:unwrap $link, ^end-group-flag]
 
-    path = cache ~key=$key {
+    [:warnings, :path] = cache ~key=$key {
         path = Path:owned $path
         fs:remove $path
         fs:create-dir $path
-        task ~count=1 "linking $description $name" { exec ~env=toolchain:tool-exec-env ^args; () }
+        warnings = task ~count=1 "linking $description $name" {
+            exec ~env=toolchain:tool-exec-env ^args |>:stderr | String:from | String:trim
+        }
         # Make symlinks
         Iter:map (fn (std:MapEntry:@ :to :from) -> fs:copy ~shallow=symbolic (Path:from $from) <| Path:join $path $to) $links
-        $path
+        [$warnings, $path]
     }
+
+    match $warnings [
+        "" -> ()
+        _ -> std:log:warn $warnings
+    ]
 
     {
         file = Path:join $path $abiname
