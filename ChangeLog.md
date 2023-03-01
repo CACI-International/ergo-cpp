@@ -1,6 +1,8 @@
 # ergo-c++ changelog
 
 ## Unreleased
+
+## 0.12.3  -- 2023-02-28
 * Report compiler warnings (as `warn` level log messages).
 
 ## 0.12.2  -- 2022-12-29
