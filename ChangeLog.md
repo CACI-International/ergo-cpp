@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.12.4  -- 2023-03-09
+* Fix caching bug introduced in 0.12.3.
+
 ## 0.12.3  -- 2023-02-28
 * Report compiler warnings (as `warn` level log messages).
 

@@ -130,7 +130,10 @@ for-file = fn :compiler (Path :file) ^:flags -> {
             obj = Path:owned $obj
             fs:create-dir <| Path:parent $obj
             warnings = task ~count=1 "compiling $proj-path" {
-                exec ~env=toolchain:tool-exec-env ^args |>:stderr | String:from | String:trim
+                # delay accessing stderr, see https://github.com/CACI-International/ergo-cpp/issues/9
+                std:index {:stderr, :success} = exec ~env=toolchain:tool-exec-env ^args
+                $success # don't hide errors
+                $stderr | String:from | String:trim
             }
             [$warnings, $obj]
         }
@@ -271,7 +274,10 @@ link = fn :description (Path :source) (String :name) (Array:of $Link |> :link) ~
         fs:remove $path
         fs:create-dir $path
         warnings = task ~count=1 "linking $description $name" {
-            exec ~env=toolchain:tool-exec-env ^args |>:stderr | String:from | String:trim
+            # delay accessing stderr, see https://github.com/CACI-International/ergo-cpp/issues/9
+            std:index {:stderr, :success} = exec ~env=toolchain:tool-exec-env ^args
+            $success
+            $stderr | String:from | String:trim
         }
         # Make symlinks
         Iter:map (fn (std:MapEntry:@ :to :from) -> fs:copy ~shallow=symbolic (Path:from $from) <| Path:join $path $to) $links
